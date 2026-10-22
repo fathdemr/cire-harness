@@ -1,0 +1,6 @@
+#!/bin/sh
+b=$(git symbolic-ref --short HEAD 2>/dev/null)
+if echo "$b" | grep -qi claude; then
+  echo "branch name must not contain the word claude" >&2
+  exit 1
+fi
