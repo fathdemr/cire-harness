@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Sequence
 from cire_harness.providers.base import Provider
 from cire_harness.providers.types import Message, Response, StreamEvent, ToolCall, ToolSpec
 
-TOOL_BLOCK = re.compile(r"```tool\s*\n(.*?)\n```", re.DOTALL)
+TOOL_BLOCK = re.compile(r"```\w*\s*\n(.*?)\n```", re.DOTALL)
 
 INSTRUCTIONS = """You can call tools. To call one, write a fenced block exactly like this:
 
@@ -51,20 +51,23 @@ def flatten(messages: Sequence[Message], tools: Sequence[ToolSpec]) -> list[Mess
 def extract_calls(text: str) -> tuple[str, list[ToolCall]]:
     calls: list[ToolCall] = []
     for match in TOOL_BLOCK.finditer(text):
-        try:
-            data = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(data, dict) or "name" not in data:
-            continue
-        calls.append(
-            ToolCall(
-                id=uuid.uuid4().hex[:8],
-                name=str(data["name"]),
-                arguments=data.get("arguments") or {},
-            )
-        )
-    return TOOL_BLOCK.sub("", text).strip(), calls
+        found = [call for line in match.group(1).splitlines() if (call := parse_call(line))]
+        calls.extend(found)
+        if found or match.group(0).startswith("```tool"):
+            text = text.replace(match.group(0), "")
+    return text.strip(), calls
+
+
+def parse_call(line: str) -> ToolCall | None:
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or "name" not in data:
+        return None
+    return ToolCall(
+        id=uuid.uuid4().hex[:8], name=str(data["name"]), arguments=data.get("arguments") or {}
+    )
 
 
 class PromptToolProvider:

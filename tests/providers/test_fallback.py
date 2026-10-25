@@ -59,3 +59,20 @@ async def test_wrapped_provider_passes_plain_text_through():
     assert response.stop_reason == "end"
     assert response.message.content == "just text"
     assert response.message.tool_calls == []
+
+
+def test_extract_accepts_any_fence_and_multiple_lines():
+    text = (
+        '```bash\n{"name": "glob_files", "arguments": {"pattern": "src/**/*.py"}}\n'
+        '{"name": "grep", "arguments": {"pattern": "run_agent"}}\n```'
+    )
+    rest, calls = extract_calls(text)
+    assert [c.name for c in calls] == ["glob_files", "grep"]
+    assert rest == ""
+
+
+def test_plain_code_blocks_are_kept():
+    text = "Use this:\n```python\nprint(1)\n```"
+    rest, calls = extract_calls(text)
+    assert calls == []
+    assert rest == text
