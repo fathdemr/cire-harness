@@ -25,7 +25,10 @@ def grep_tools(root: Path) -> list[Tool]:
         cmd += [pattern, str(path.relative_to(root))]
 
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=root, stdout=PIPE, stderr=PIPE,
+            *cmd,
+            cwd=root,
+            stdout=PIPE,
+            stderr=PIPE,
         )
 
         stdout, stderr = await proc.communicate()
@@ -44,7 +47,8 @@ def grep_tools(root: Path) -> list[Tool]:
         Tool(
             ToolSpec(
                 name="grep",
-                description="Search file contents for a regex pattern, returns file:line:text. glob limits to matching file names, for example *.py",
+                description="Search file contents for a regex pattern, returns file:line:text. "
+                "glob limits to matching file names, for example *.py",
                 parameters=schema(
                     pattern={"type": "string"},
                     path={"type": "string", "optional": True},
