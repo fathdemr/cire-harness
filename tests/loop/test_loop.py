@@ -1,6 +1,6 @@
 from cire_harness.loop.loop import run_agent
 from cire_harness.providers.fake import FakeProvider
-from cire_harness.providers.types import Message, Response, ToolCall, ToolSpec
+from cire_harness.providers.types import Message, Response, StreamEvent, ToolCall, ToolSpec
 from cire_harness.tools import Tool, ToolRegistry
 from cire_harness.tools.fs import fs_tools
 
@@ -85,3 +85,25 @@ async def test_tool_exception_is_reported_to_the_model():
     provider = FakeProvider([reply(calls=[call]), reply("ok")])
     assert await run_agent(provider, ToolRegistry([tool]), ask(), allow) == "ok"
     assert provider.calls[1][0][-1].content == "error: ValueError: boom"
+
+
+async def test_stream_events_are_forwarded():
+    events = []
+    provider = FakeProvider([reply("hello world")])
+    await run_agent(provider, ToolRegistry([]), ask(), allow, on_event=events.append)
+    assert [e.type for e in events if isinstance(e, StreamEvent)] == ["text", "text", "done"]
+
+
+async def test_tool_results_are_forwarded(tmp_path):
+    (tmp_path / "a.py").write_text("x\n")
+    call = ToolCall(id="c1", name="read_file", arguments={"path": "a.py"})
+    provider = FakeProvider([reply(calls=[call]), reply("done")])
+    events = []
+    await run_agent(
+        provider, ToolRegistry(fs_tools(tmp_path)), ask(), allow, on_event=events.append
+    )
+    results = [e for e in events if isinstance(e, Message)]
+    assert len(results) == 1
+    assert results[0].role == "tool"
+    assert results[0].tool_call_id == "c1"
+    assert results[0].content == "x\n"

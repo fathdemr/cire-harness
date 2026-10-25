@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Protocol
 
 from cire_harness.providers.types import Message, Response, StreamEvent, ToolSpec
@@ -21,9 +21,14 @@ class Provider(Protocol):
 
 
 async def complete(
-    provider: Provider, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
+    provider: Provider,
+    messages: Sequence[Message],
+    tools: Sequence[ToolSpec] = (),
+    on_event: Callable[[StreamEvent], None] | None = None,
 ) -> Response:
     async for event in provider.stream(messages, tools):
+        if on_event is not None:
+            on_event(event)
         if event.type == "done" and event.response is not None:
             return event.response
     raise ProviderError("stream ended without a done event")

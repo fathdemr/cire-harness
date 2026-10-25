@@ -2,10 +2,11 @@ from collections.abc import Awaitable, Callable
 
 from cire_harness.providers import Provider
 from cire_harness.providers.base import complete
-from cire_harness.providers.types import Message, ToolCall
+from cire_harness.providers.types import Message, StreamEvent, ToolCall
 from cire_harness.tools import ToolRegistry
 
 Approve = Callable[[ToolCall], Awaitable[bool]]
+OnEvent = Callable[[StreamEvent | Message], None]
 
 
 async def run_agent(
@@ -14,15 +15,19 @@ async def run_agent(
     messages: list[Message],
     approve: Approve,
     max_turns: int = 20,
+    on_event: OnEvent | None = None,
 ) -> str:
     for _ in range(max_turns):
-        response = await complete(provider, messages, registry.specs())
+        response = await complete(provider, messages, registry.specs(), on_event)
         messages.append(response.message)
         if not response.message.tool_calls:
             return response.message.content
         for call in response.message.tool_calls:
             result = await run_tool(registry, call, approve)
-            messages.append(Message(role="tool", content=result, tool_call_id=call.id))
+            result_msg = Message(role="tool", content=result, tool_call_id=call.id)
+            messages.append(result_msg)
+            if on_event is not None:
+                on_event(result_msg)
     return f"stopped after {max_turns} turns"
 
 
