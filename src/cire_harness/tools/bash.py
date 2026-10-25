@@ -16,8 +16,8 @@ def bash_tools(root: Path) -> list[Tool]:
     async def bash(args: dict[str, Any]) -> str:
         try:
             command = args["command"]
-            timeout = args.get("timeout", DEFAULT_TIMEOUT)
-        except KeyError as exc:
+            timeout = float(args.get("timeout", DEFAULT_TIMEOUT))
+        except (KeyError, ValueError, TypeError) as exc:
             return f"error: {exc}"
 
         proc = await asyncio.create_subprocess_shell(

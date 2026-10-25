@@ -39,3 +39,12 @@ async def test_missing_command_is_an_error(tmp_path):
 
 def test_tool_is_risky(tmp_path):
     assert bash_tools(tmp_path)[0].risky
+
+
+async def test_timeout_given_as_string_is_accepted(tmp_path):
+    assert await bash(tmp_path)({"command": "echo hi", "timeout": "5"}) == "hi"
+
+
+async def test_bad_timeout_is_an_error(tmp_path):
+    result = await bash(tmp_path)({"command": "echo hi", "timeout": "abc"})
+    assert result.startswith("error:")
