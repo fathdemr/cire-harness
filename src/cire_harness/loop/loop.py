@@ -32,4 +32,7 @@ async def run_tool(registry: ToolRegistry, call: ToolCall, approve: Approve) -> 
         return f"error: unknown tool {call.name}"
     if tool.risky and not await approve(call):
         return "error: permission denied"
-    return await tool.run(call.arguments)
+    try:
+        return await tool.run(call.arguments)
+    except Exception as exc:
+        return f"error: {type(exc).__name__}: {exc}"

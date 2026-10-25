@@ -74,3 +74,14 @@ async def test_max_turns_stops_the_loop():
     result = await run_agent(provider, ToolRegistry([]), ask(), allow, max_turns=3)
     assert result == "stopped after 3 turns"
     assert len(provider.calls) == 3
+
+
+async def test_tool_exception_is_reported_to_the_model():
+    async def run(args):
+        raise ValueError("boom")
+
+    tool = Tool(ToolSpec(name="broken", description="x"), run)
+    call = ToolCall(id="c1", name="broken")
+    provider = FakeProvider([reply(calls=[call]), reply("ok")])
+    assert await run_agent(provider, ToolRegistry([tool]), ask(), allow) == "ok"
+    assert provider.calls[1][0][-1].content == "error: ValueError: boom"
