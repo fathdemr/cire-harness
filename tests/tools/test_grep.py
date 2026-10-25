@@ -36,6 +36,7 @@ async def test_path_outside_root_is_rejected(tmp_path):
     result = await grep(tmp_path)({"pattern": "x", "path": "../../etc"})
     assert result.startswith("error:")
 
+
 async def test_glob_filters_by_filename(tmp_path):
     (tmp_path / "a.py").write_text("hello\n")
     (tmp_path / "a.txt").write_text("hello\n")
