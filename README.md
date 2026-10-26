@@ -1,6 +1,6 @@
 # cire-harness
 
-[![M8ven Score](https://m8ven.ai/badge/mcp/fathdemr/cire-harness?variant=verified)](https://m8ven.ai/mcp/fathdemr/cire-harness?s=readme)
+[![M8ven Score](https://m8ven.ai/badge/mcp/fathdemr-cire-harness-spfj31?v=037b2209a018f964b0704446e4ef47ba)](https://m8ven.ai/mcp/fathdemr-cire-harness-spfj31?s=readme)
 
 A multi-provider CLI agent harness. A strong **planner** model plans the work and verifies the results, while cheaper **executor** models do the heavy lifting. All context lives in a local SQLite store.
 
