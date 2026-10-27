@@ -45,3 +45,37 @@ async def test_tool_calls_and_results_are_shown(tmp_path):
         assert "-> read_file {'path': 'a.py'}" in lines
         assert "<- x" in lines
         assert lines[-1] == "done"
+
+
+def make_app(messages=()):
+    return ChatApp(FakeProvider([]), ToolRegistry([]), list(messages), "t3")
+
+
+def test_stats_shows_usage():
+    assert make_app().handle_command("/stats") == "input=0 output=0 cached=0"
+
+
+def test_model_get_and_set():
+    app = make_app()
+    assert app.handle_command("/model") == "fake-model"
+    assert app.handle_command("/model nonsense").startswith("error:")
+    assert app.handle_command("/model ollama:llama3.1") == "model: llama3.1"
+
+
+def test_compact_keeps_last_ten():
+    app = make_app(Message(role="user", content=str(i)) for i in range(15))
+    assert app.handle_command("/compact") == "kept 10 messages"
+    assert app.messages[0].content == "5"
+
+
+def test_unknown_command():
+    assert make_app().handle_command("/nope").startswith("unknown command")
+
+
+async def test_command_does_not_reach_agent():
+    app = make_app()
+    async with app.run_test() as pilot:
+        await pilot.press(*"/stats", "enter")
+        await pilot.pause()
+        assert log_lines(app) == ["input=0 output=0 cached=0"]
+    assert app.messages == []
