@@ -167,7 +167,7 @@ async def test_provider_error_is_logged_not_fatal(store):
 
 
 async def test_mcp_tools_join_registry_and_close_on_exit(store):
-    call = ToolCall(id="c1", name="echo.echo", arguments={"text": "hi", "times": 2})
+    call = ToolCall(id="c1", name="echo_echo", arguments={"text": "hi", "times": 2})
     provider = FakeProvider([reply(calls=[call]), reply("done")])
     echo_server = str(Path(__file__).parent.parent / "mcp_client" / "echo_server.py")
     servers = {
@@ -184,7 +184,7 @@ async def test_mcp_tools_join_registry_and_close_on_exit(store):
         assert "<- hihi" in lines
         assert lines[-1] == "done"
         assert any(line.startswith("mcp bad:") for line in lines)
-        assert app.handle_command("/tools") == "echo.echo\necho.secret\necho.fail"
+        assert app.handle_command("/tools") == "echo_echo\necho_secret\necho_fail"
     assert app.mcp.closed
 
 
@@ -227,3 +227,26 @@ async def test_delegate_runs_executor_with_confirmation(tmp_path, store):
         assert lines[-1] == "planner done"
         assert app.handle_command("/stats").endswith("executor: input=7 output=0 cached=0")
     assert (tmp_path / "x.txt").read_text() == "1"
+
+
+async def test_log_selection_and_copy_command(store, monkeypatch):
+    from textual.geometry import Offset
+    from textual.selection import Selection
+
+    from cire_harness.tui.app import Log
+
+    history = [
+        Message(role="user", content="first"),
+        Message(role="assistant", content="second line"),
+    ]
+    app = make_app(store, history)
+    copied = []
+    monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        log = app.query_one(Log)
+        text, end = log.get_selection(Selection(Offset(0, 0), Offset(6, 1)))
+        assert text == "you: first\nsecond" and end == "\n"
+        assert app.handle_command("/copy") == "copied 11 chars"
+    assert copied == ["second line"]
+    assert make_app(store).handle_command("/copy") == "nothing to copy"

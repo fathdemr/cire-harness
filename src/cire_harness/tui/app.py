@@ -2,6 +2,7 @@ import asyncio
 
 from textual.app import App
 from textual.screen import ModalScreen
+from textual.selection import Selection
 from textual.widgets import Button, Input, Label, RichLog, Static
 
 from cire_harness.config import MCPServer
@@ -13,6 +14,16 @@ from cire_harness.providers import ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall, Usage
 
 FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+class Log(RichLog):
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        text = "\n".join(strip.text for strip in self.lines)
+        return selection.extract(text), "\n"
+
+    def selection_updated(self, selection: Selection | None) -> None:
+        self._line_cache.clear()
+        self.refresh()
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -63,7 +74,7 @@ class ChatApp(App):
         self.frame = 0
 
     def compose(self):
-        yield RichLog(wrap=True)
+        yield Log(wrap=True)
         yield Static(id="status")
         yield Input(placeholder="...")
 
@@ -211,6 +222,12 @@ class ChatApp(App):
                     return f"model: {self.provider.model}"
                 except ProviderError as exc:
                     return f"error: {exc}"
+        elif cmd == "/copy":
+            last = next((m.content for m in reversed(self.messages) if m.role == "assistant"), "")
+            if not last:
+                return "nothing to copy"
+            self.copy_to_clipboard(last)
+            return f"copied {len(last)} chars"
         elif cmd == "/tools":
             return "\n".join(
                 f"{t.name}{' (confirm)' if t.risky else ''}" for t in self.registry.tools.values()
