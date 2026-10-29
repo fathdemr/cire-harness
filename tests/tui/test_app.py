@@ -1,8 +1,11 @@
 import asyncio
+import sys
+from pathlib import Path
 
 import pytest
 from textual.widgets import RichLog, Static
 
+from cire_harness.config import MCPServer
 from cire_harness.context.store import ContextStore
 from cire_harness.providers.fake import FakeProvider
 from cire_harness.providers.types import Message, Response, StreamEvent, ToolCall
@@ -161,3 +164,25 @@ async def test_provider_error_is_logged_not_fatal(store):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert log_lines(app)[-1].startswith("error: fake provider has no responses")
+
+
+async def test_mcp_tools_join_registry_and_close_on_exit(store):
+    call = ToolCall(id="c1", name="echo.echo", arguments={"text": "hi", "times": 2})
+    provider = FakeProvider([reply(calls=[call]), reply("done")])
+    echo_server = str(Path(__file__).parent.parent / "mcp_client" / "echo_server.py")
+    servers = {
+        "echo": MCPServer(command=sys.executable, args=[echo_server], trusted=True),
+        "bad": MCPServer(command="no-such-cmd-xyz"),
+    }
+    app = ChatApp(provider, ToolRegistry([]), [], "t9", store, mcp_servers=servers)
+    async with app.run_test() as pilot:
+        await pilot.press(*"/tools", "enter")
+        await pilot.press(*"go", "enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        lines = log_lines(app)
+        assert "<- hihi" in lines
+        assert lines[-1] == "done"
+        assert any(line.startswith("mcp bad:") for line in lines)
+        assert app.handle_command("/tools") == "echo.echo\necho.fail"
+    assert app.mcp.closed

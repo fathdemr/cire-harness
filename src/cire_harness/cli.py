@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from cire_harness import __version__
+from cire_harness.config import load_config
 from cire_harness.context.recall import recall_tools
 from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
@@ -72,7 +73,11 @@ def chat(
 
     store = ContextStore()
     try:
+        config = load_config()
         messages = store.load_messages(session) if session else []
+    except ValueError as exc:
+        typer.echo(f"error: bad config: {exc}", err=True)
+        raise typer.Exit(1) from None
     except KeyError:
         typer.echo(f"error: no session {session}", err=True)
         raise typer.Exit(1) from None
@@ -84,7 +89,9 @@ def chat(
     )
 
     try:
-        ChatApp(get_provider(provider), registry, messages, session_id, store, budget).run()
+        ChatApp(
+            get_provider(provider), registry, messages, session_id, store, budget, config.mcp
+        ).run()
     except ProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from None

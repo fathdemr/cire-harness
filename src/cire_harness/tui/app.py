@@ -4,9 +4,11 @@ from textual.app import App
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RichLog, Static
 
+from cire_harness.config import MCPServer
 from cire_harness.context.compactor import KEEP_MESSAGES, compact, estimate_tokens, split_point
 from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
+from cire_harness.mcp.client import MCPManager
 from cire_harness.providers import ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall, Usage
 
@@ -38,6 +40,7 @@ class ChatApp(App):
         session_id: str,
         store: ContextStore,
         budget: int = 8000,
+        mcp_servers: dict[str, MCPServer] | None = None,
     ):
         super().__init__()
         self.provider = provider
@@ -48,6 +51,10 @@ class ChatApp(App):
         self.budget = budget
         self.usage = Usage()
         self.worker = None
+        self.mcp_servers = mcp_servers or {}
+        self.mcp = MCPManager()
+        self.mcp_ready = asyncio.Event()
+        self.mcp_closing = asyncio.Event()
         self.state = ""
         self.partial = ""
         self.frame = 0
@@ -67,6 +74,22 @@ class ChatApp(App):
                     log.write(f"{message.content}")
         self.query_one(Input).focus()
         self.set_interval(0.1, self.tick)
+        self.mcp_task = asyncio.create_task(self.mcp_lifecycle())
+
+    async def mcp_lifecycle(self):
+        try:
+            tools = await self.mcp.connect(self.mcp_servers)
+            self.registry.tools.update({t.name: t for t in tools})
+            for name, error in self.mcp.errors.items():
+                self.query_one(RichLog).write(f"mcp {name}: {error}")
+        finally:
+            self.mcp_ready.set()
+        await self.mcp_closing.wait()
+        await self.mcp.close()
+
+    async def on_unmount(self):
+        self.mcp_closing.set()
+        await self.mcp_task
 
     def tick(self):
         if not self.state:
@@ -114,6 +137,8 @@ class ChatApp(App):
         return await self.push_screen_wait(ConfirmScreen(f"run {call.name} {call.arguments}?"))
 
     async def ask(self):
+        self.state = "connecting mcp"
+        await self.mcp_ready.wait()
         self.state = "thinking"
         try:
             await run_agent(
@@ -169,6 +194,10 @@ class ChatApp(App):
                     return f"model: {self.provider.model}"
                 except ProviderError as exc:
                     return f"error: {exc}"
+        elif cmd == "/tools":
+            return "\n".join(
+                f"{t.name}{' (confirm)' if t.risky else ''}" for t in self.registry.tools.values()
+            )
         elif cmd == "/compact":
             self.run_worker(self.compact())
             return "compacting..."
