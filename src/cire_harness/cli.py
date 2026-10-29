@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from cire_harness import __version__
+from cire_harness.context.recall import recall_tools
 from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
 from cire_harness.providers import ProviderError, get_provider
@@ -66,6 +67,7 @@ def run(
 def chat(
     provider: str = typer.Option("ollama:llama3.1", "--provider", "-p"),
     session: str | None = typer.Option(None, "--session", "-s"),
+    budget: int = typer.Option(8000, "--budget", help="Token budget before compaction"),
 ) -> None:
 
     store = ContextStore()
@@ -77,10 +79,12 @@ def chat(
 
     session_id = session or datetime.now().strftime("%Y%m%d-%H%M%S")
     root = Path.cwd()
-    registry = ToolRegistry(fs_tools(root) + bash_tools(root) + grep_tools(root))
+    registry = ToolRegistry(
+        fs_tools(root) + bash_tools(root) + grep_tools(root) + recall_tools(store, session_id)
+    )
 
     try:
-        ChatApp(get_provider(provider), registry, messages, session_id, store).run()
+        ChatApp(get_provider(provider), registry, messages, session_id, store, budget).run()
     except ProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from None

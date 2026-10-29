@@ -2,6 +2,7 @@ from textual.app import App
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RichLog
 
+from cire_harness.context.compactor import KEEP_MESSAGES, compact, estimate_tokens, split_point
 from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
 from cire_harness.providers import ProviderError, get_provider
@@ -30,6 +31,7 @@ class ChatApp(App):
         messages: list[Message],
         session_id: str,
         store: ContextStore,
+        budget: int = 8000,
     ):
         super().__init__()
         self.provider = provider
@@ -37,6 +39,7 @@ class ChatApp(App):
         self.messages = messages
         self.session_id = session_id
         self.store = store
+        self.budget = budget
         self.usage = Usage()
 
     def compose(self):
@@ -87,14 +90,32 @@ class ChatApp(App):
             self.messages,
             on_event=self.show_event,
             approve=self.approve,
+            mask=lambda call, result: self.store.mask(self.session_id, call, result),
         )
+        if estimate_tokens(self.messages) > self.budget:
+            await self.compact()
         self.store.save_messages(self.session_id, self.messages)
+
+    async def compact(self) -> None:
+        before = estimate_tokens(self.messages)
+        dropped = self.messages[: split_point(self.messages, KEEP_MESSAGES)]
+        self.messages[:], summary = await compact(self.provider, self.messages)
+        if summary:
+            self.store.save_summary(self.session_id, summary, dropped)
+            self.store.save_messages(self.session_id, self.messages)
+        self.query_one(RichLog).write(
+            f"compacted: ~{before} -> ~{estimate_tokens(self.messages)} tokens, "
+            f"{len(self.messages)} messages"
+        )
 
     def handle_command(self, text: str) -> str:
         cmd, *args = text.split()
         if cmd == "/stats":
             u = self.usage
-            return f"input={u.input_tokens} output={u.output_tokens} cached={u.cached_tokens}"
+            return (
+                f"input={u.input_tokens} output={u.output_tokens} cached={u.cached_tokens} "
+                f"context~{estimate_tokens(self.messages)}/{self.budget}"
+            )
         elif cmd == "/sessions":
             return "\n".join(self.store.list_sessions())
         elif cmd == "/model":
@@ -107,7 +128,7 @@ class ChatApp(App):
                 except ProviderError as exc:
                     return f"error: {exc}"
         elif cmd == "/compact":
-            del self.messages[:-10]
-            return f"kept {len(self.messages)} messages"
+            self.run_worker(self.compact())
+            return "compacting..."
         else:
             return f"unknown command: {cmd!r}"

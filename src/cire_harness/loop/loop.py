@@ -7,6 +7,7 @@ from cire_harness.tools import ToolRegistry
 
 Approve = Callable[[ToolCall], Awaitable[bool]]
 OnEvent = Callable[[StreamEvent | Message], None]
+Mask = Callable[[ToolCall, str], str]
 
 
 async def run_agent(
@@ -16,6 +17,7 @@ async def run_agent(
     approve: Approve,
     max_turns: int = 20,
     on_event: OnEvent | None = None,
+    mask: Mask | None = None,
 ) -> str:
     for _ in range(max_turns):
         response = await complete(provider, messages, registry.specs(), on_event)
@@ -24,6 +26,8 @@ async def run_agent(
             return response.message.content
         for call in response.message.tool_calls:
             result = await run_tool(registry, call, approve)
+            if mask is not None:
+                result = mask(call, result)
             result_msg = Message(role="tool", content=result, tool_call_id=call.id)
             messages.append(result_msg)
             if on_event is not None:

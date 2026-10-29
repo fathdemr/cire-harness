@@ -47,12 +47,42 @@ async def test_tool_calls_and_results_are_shown(tmp_path, store):
         assert lines[-1] == "done"
 
 
+async def test_large_tool_result_is_masked_and_stored(tmp_path, store):
+    (tmp_path / "big.txt").write_text("word " * 2000)
+    call = ToolCall(id="c1", name="read_file", arguments={"path": "big.txt"})
+    provider = FakeProvider([reply(calls=[call]), reply("done")])
+    app = ChatApp(provider, ToolRegistry(fs_tools(tmp_path)), [], "t4", store)
+    async with app.run_test() as pilot:
+        await pilot.press(*"read", "enter")
+        await app.workers.wait_for_complete()
+    tool_msg = next(m for m in app.messages if m.role == "tool")
+    assert "[stored result id=1" in tool_msg.content
+    assert len(tool_msg.content) < 600
+    assert store.load_tool_result(1) == "word " * 2000
+
+
+async def test_over_budget_triggers_compaction(store):
+    history = [Message(role="user", content="fact " * 80) for _ in range(20)]
+    provider = FakeProvider([reply("answer"), reply("the summary")])
+    app = ChatApp(provider, ToolRegistry([]), history, "t5", store, budget=500)
+    async with app.run_test() as pilot:
+        await pilot.press(*"more", "enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert log_lines(app)[-1].startswith("compacted: ~")
+    assert app.messages[0].role == "system"
+    assert "the summary" in app.messages[0].content
+    assert len(app.messages) < 10
+    assert store.load_messages("t5") == app.messages
+    assert store.search("t5", "fact")
+
+
 def make_app(store, messages=()):
     return ChatApp(FakeProvider([]), ToolRegistry([]), list(messages), "t3", store)
 
 
 def test_stats_shows_usage(store):
-    assert make_app(store).handle_command("/stats") == "input=0 output=0 cached=0"
+    assert make_app(store).handle_command("/stats") == "input=0 output=0 cached=0 context~0/8000"
 
 
 def test_model_get_and_set(store):
@@ -60,12 +90,6 @@ def test_model_get_and_set(store):
     assert app.handle_command("/model") == "fake-model"
     assert app.handle_command("/model nonsense").startswith("error:")
     assert app.handle_command("/model ollama:llama3.1") == "model: llama3.1"
-
-
-def test_compact_keeps_last_ten(store):
-    app = make_app(store, (Message(role="user", content=str(i)) for i in range(15)))
-    assert app.handle_command("/compact") == "kept 10 messages"
-    assert app.messages[0].content == "5"
 
 
 def test_sessions_lists_store(store):
@@ -82,5 +106,5 @@ async def test_command_does_not_reach_agent(store):
     async with app.run_test() as pilot:
         await pilot.press(*"/stats", "enter")
         await pilot.pause()
-        assert log_lines(app) == ["input=0 output=0 cached=0"]
+        assert log_lines(app) == ["input=0 output=0 cached=0 context~0/8000"]
     assert app.messages == []
