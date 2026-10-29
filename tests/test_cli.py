@@ -26,3 +26,28 @@ def test_run_reports_provider_error():
     result = runner.invoke(app, ["run", "x", "--provider", "bogus"])
     assert result.exit_code == 1
     assert "error:" in result.output
+
+
+def test_mcp_add_list_remove(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = runner.invoke(
+        app, ["mcp", "add", "gh", "--env", "GITHUB_TOKEN", "--trusted", "--", "npx", "-y", "srv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "GITHUB_TOKEN" in result.output
+    assert runner.invoke(app, ["mcp", "add", "r", "--url", "http://h/mcp"]).exit_code == 0
+    listed = runner.invoke(app, ["mcp", "list"]).output
+    assert "gh: npx -y srv  [env=GITHUB_TOKEN trusted]" in listed
+    assert "r: http://h/mcp" in listed
+    assert (tmp_path / ".cire" / "config.toml").exists()
+    assert runner.invoke(app, ["mcp", "remove", "gh"]).exit_code == 0
+    assert "gh" not in runner.invoke(app, ["mcp", "list"]).output
+    assert runner.invoke(app, ["mcp", "remove", "gh"]).exit_code == 1
+
+
+def test_mcp_add_rejects_env_values_and_missing_transport(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = runner.invoke(app, ["mcp", "add", "x", "--env", "TOKEN=abc", "--", "cmd"])
+    assert result.exit_code == 1
+    assert "never a value" in result.output
+    assert runner.invoke(app, ["mcp", "add", "x"]).exit_code == 1
