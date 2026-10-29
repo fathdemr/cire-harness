@@ -34,8 +34,22 @@ class MCPServer(BaseModel):
         return names
 
 
+ROLES = ("planner", "executor", "compactor")
+
+
 class Config(BaseModel):
+    roles: dict[str, str] = Field(default_factory=dict)
     mcp: dict[str, MCPServer] = Field(default_factory=dict)
+
+    @field_validator("roles")
+    @classmethod
+    def known_roles(cls, roles: dict[str, str]) -> dict[str, str]:
+        for name, spec in roles.items():
+            if name not in ROLES:
+                raise ValueError(f"unknown role {name!r}, expected one of {', '.join(ROLES)}")
+            if ":" not in spec:
+                raise ValueError(f"role {name} must look like kind:model, got {spec!r}")
+        return roles
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -48,6 +62,10 @@ def load_config(path: Path | None = None) -> Config:
 def save_config(config: Config, path: Path | None = None) -> Path:
     path = path or default_path()
     lines: list[str] = []
+    if config.roles:
+        lines.append("[roles]")
+        lines += [f"{name} = {json.dumps(spec)}" for name, spec in config.roles.items()]
+        lines.append("")
     for name, server in config.mcp.items():
         lines.append(f"[mcp.{json.dumps(name)}]")
         for key, value in server.model_dump(exclude_defaults=True).items():

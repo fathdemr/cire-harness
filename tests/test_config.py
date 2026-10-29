@@ -48,3 +48,15 @@ def test_save_then_load_round_trip(tmp_path):
     path = save_config(config, tmp_path / "sub" / "config.toml")
     assert load_config(path) == config
     assert "GITHUB_TOKEN" in path.read_text()
+
+
+def test_roles_round_trip_and_validation(tmp_path):
+    from cire_harness.config import Config, save_config
+
+    config = Config(roles={"planner": "anthropic:claude-sonnet-4-5", "executor": "ollama:llama3.1"})
+    path = save_config(config, tmp_path / "config.toml")
+    assert load_config(path) == config
+    for body in ['[roles]\nboss = "a:b"\n', '[roles]\nplanner = "nomodel"\n']:
+        path.write_text(body)
+        with pytest.raises(ValidationError):
+            load_config(path)
