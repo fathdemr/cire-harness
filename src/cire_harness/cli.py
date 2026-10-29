@@ -143,7 +143,9 @@ def chat(
         delegate = None
         if executor := config.roles.get("executor"):
             delegate = partial(delegate_tool, meter(executor, "executor"), root)
-        ChatApp(planner, registry, messages, session_id, store, budget, config.mcp, delegate).run()
+        ChatApp(planner, registry, messages, session_id, store, budget, config.mcp, delegate).run(
+            mouse=False
+        )
     except ProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from None
