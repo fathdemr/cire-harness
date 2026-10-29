@@ -54,7 +54,7 @@ export AWS_REGION=eu-central-1
 | --- | --- | --- |
 | `anthropic:claude-sonnet-4-5` | `ANTHROPIC_API_KEY` | Anthropic API, streaming |
 | `openai:gpt-5` | `OPENAI_API_KEY` | OpenAI and any OpenAI-compatible endpoint |
-| `bedrock:anthropic.claude-sonnet-4-5-20250929-v1:0` | `AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION` | Claude on AWS Bedrock with a [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html); non-streaming |
+| `bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0` | `AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION` | Claude on AWS Bedrock with a [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html); non-streaming. Use the inference profile id (`eu.`, `us.` or `apac.` prefix), bare model ids are rejected with HTTP 400 |
 | `ollama:llama3.1` | none | local, uses the prompt-based tool fallback |
 
 Each key is sent only to its own provider, over HTTPS, and never appears in logs or error messages. If a key is missing cire stops with a message naming the variable instead of sending an empty credential.
@@ -64,7 +64,7 @@ Each key is sent only to its own provider, over HTTPS, and never appears in logs
 cire can route work between two models. The model you chat with is the **planner**. When an **executor** role is set, the planner gets a `delegate` tool: it writes a short spec (goal, files, constraints, acceptance commands) and a cheaper model carries it out in a fresh context with file tools only. The harness then runs the acceptance commands itself, retries once with the failure output, and hands the planner a short report instead of the executor's whole history.
 
 ```bash
-uv run cire role set planner bedrock:anthropic.claude-sonnet-4-5-20250929-v1:0
+uv run cire role set planner bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0
 uv run cire role set executor ollama:llama3.1
 uv run cire role list
 uv run cire chat          # planner from config, delegate available
