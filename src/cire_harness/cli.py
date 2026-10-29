@@ -5,10 +5,10 @@ from pathlib import Path
 import typer
 
 from cire_harness import __version__
+from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
 from cire_harness.providers import ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall
-from cire_harness.session import load_session
 from cire_harness.tools import ToolRegistry
 from cire_harness.tools.bash import bash_tools
 from cire_harness.tools.fs import fs_tools
@@ -68,19 +68,19 @@ def chat(
     session: str | None = typer.Option(None, "--session", "-s"),
 ) -> None:
 
-    root = Path.cwd()
-    registry = ToolRegistry(fs_tools(root) + bash_tools(root) + grep_tools(root))
-
+    store = ContextStore()
     try:
-        messages = load_session(session) if session else []
-    except FileNotFoundError:
+        messages = store.load_messages(session) if session else []
+    except KeyError:
         typer.echo(f"error: no session {session}", err=True)
         raise typer.Exit(1) from None
 
     session_id = session or datetime.now().strftime("%Y%m%d-%H%M%S")
+    root = Path.cwd()
+    registry = ToolRegistry(fs_tools(root) + bash_tools(root) + grep_tools(root))
 
     try:
-        ChatApp(get_provider(provider), registry, messages, session_id).run()
+        ChatApp(get_provider(provider), registry, messages, session_id, store).run()
     except ProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from None

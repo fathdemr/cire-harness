@@ -2,10 +2,10 @@ from textual.app import App
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RichLog
 
+from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
 from cire_harness.providers import ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall, Usage
-from cire_harness.session import list_sessions, save_session
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -23,12 +23,20 @@ class ConfirmScreen(ModalScreen[bool]):
 
 
 class ChatApp(App):
-    def __init__(self, provider, registry, messages: list[Message], session_id):
+    def __init__(
+        self,
+        provider,
+        registry,
+        messages: list[Message],
+        session_id: str,
+        store: ContextStore,
+    ):
         super().__init__()
         self.provider = provider
         self.registry = registry
         self.messages = messages
         self.session_id = session_id
+        self.store = store
         self.usage = Usage()
 
     def compose(self):
@@ -80,7 +88,7 @@ class ChatApp(App):
             on_event=self.show_event,
             approve=self.approve,
         )
-        save_session(self.session_id, self.messages)
+        self.store.save_messages(self.session_id, self.messages)
 
     def handle_command(self, text: str) -> str:
         cmd, *args = text.split()
@@ -88,7 +96,7 @@ class ChatApp(App):
             u = self.usage
             return f"input={u.input_tokens} output={u.output_tokens} cached={u.cached_tokens}"
         elif cmd == "/sessions":
-            return "\n".join(list_sessions())
+            return "\n".join(self.store.list_sessions())
         elif cmd == "/model":
             if not args:
                 return self.provider.model
