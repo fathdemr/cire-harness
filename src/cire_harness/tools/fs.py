@@ -69,6 +69,7 @@ def fs_tools(root: Path) -> list[Tool]:
                 parameters=schema(path={"type": "string"}, content={"type": "string"}),
             ),
             write_file,
+            risky=True,
         ),
         Tool(
             ToolSpec(
@@ -79,6 +80,7 @@ def fs_tools(root: Path) -> list[Tool]:
                 ),
             ),
             edit_file,
+            risky=True,
         ),
         Tool(
             ToolSpec(

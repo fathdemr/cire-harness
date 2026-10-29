@@ -44,3 +44,8 @@ def test_specs_mark_optional_params(tmp_path):
     specs = {s.name: s for s in registry(tmp_path).specs()}
     assert specs["glob_files"].parameters["required"] == []
     assert specs["edit_file"].parameters["required"] == ["path", "old", "new"]
+
+
+def test_only_writing_tools_are_risky(tmp_path):
+    risky = {t.name for t in fs_tools(tmp_path) if t.risky}
+    assert risky == {"write_file", "edit_file"}
