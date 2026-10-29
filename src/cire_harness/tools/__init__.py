@@ -38,3 +38,22 @@ def resolve_inside(root: Path, raw: str) -> Path:
 def schema(**props: dict[str, Any]) -> dict[str, Any]:
     required = [k for k, v in props.items() if not v.pop("optional", False)]
     return {"type": "object", "properties": props, "required": required}
+
+
+def coerce(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    props = schema.get("properties", {})
+    out = dict(args)
+    for key, value in args.items():
+        if not isinstance(value, str):
+            continue
+        kind = props.get(key, {}).get("type")
+        try:
+            if kind == "integer":
+                out[key] = int(value)
+            elif kind == "number":
+                out[key] = float(value)
+            elif kind == "boolean" and value.lower() in ("true", "false"):
+                out[key] = value.lower() == "true"
+        except ValueError:
+            pass
+    return out

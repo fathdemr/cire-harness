@@ -73,6 +73,7 @@ class ChatApp(App):
                 if message.content:
                     log.write(f"{message.content}")
         self.query_one(Input).focus()
+        self.status = self.query_one("#status", Static)
         self.set_interval(0.1, self.tick)
         self.mcp_task = asyncio.create_task(self.mcp_lifecycle())
 
@@ -93,13 +94,13 @@ class ChatApp(App):
 
     def tick(self):
         if not self.state:
-            self.query_one("#status", Static).update("")
+            self.status.update("")
             return
         self.frame = (self.frame + 1) % len(FRAMES)
         text = f"{FRAMES[self.frame]} {self.state}  (esc to stop)"
         if self.partial:
             text += "\n" + self.partial[-500:]
-        self.query_one("#status", Static).update(text)
+        self.status.update(text)
 
     def show_event(self, event):
         log = self.query_one(RichLog)

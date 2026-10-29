@@ -1,4 +1,4 @@
-from cire_harness.loop.loop import run_agent
+from cire_harness.loop.loop import run_agent, run_tool
 from cire_harness.providers.fake import FakeProvider
 from cire_harness.providers.types import Message, Response, StreamEvent, ToolCall, ToolSpec
 from cire_harness.tools import Tool, ToolRegistry
@@ -107,3 +107,24 @@ async def test_tool_results_are_forwarded(tmp_path):
     assert results[0].role == "tool"
     assert results[0].tool_call_id == "c1"
     assert results[0].content == "x\n"
+
+
+async def test_run_tool_coerces_arguments_from_schema():
+    from cire_harness.providers.types import ToolSpec
+    from cire_harness.tools import Tool, schema
+
+    seen = {}
+
+    async def grab(args):
+        seen.update(args)
+        return "ok"
+
+    spec = ToolSpec(name="t", description="", parameters=schema(n={"type": "integer"}))
+    registry = ToolRegistry([Tool(spec, grab)])
+    call = ToolCall(id="1", name="t", arguments={"n": "42"})
+
+    async def allow(call):
+        return True
+
+    assert await run_tool(registry, call, allow) == "ok"
+    assert seen == {"n": 42}

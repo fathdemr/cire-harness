@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 from cire_harness.providers import Provider
 from cire_harness.providers.base import complete
 from cire_harness.providers.types import Message, StreamEvent, ToolCall
-from cire_harness.tools import ToolRegistry
+from cire_harness.tools import ToolRegistry, coerce
 
 Approve = Callable[[ToolCall], Awaitable[bool]]
 OnEvent = Callable[[StreamEvent | Message], None]
@@ -42,6 +42,6 @@ async def run_tool(registry: ToolRegistry, call: ToolCall, approve: Approve) -> 
     if tool.risky and not await approve(call):
         return "error: permission denied"
     try:
-        return await tool.run(call.arguments)
+        return await tool.run(coerce(tool.spec.parameters, call.arguments))
     except Exception as exc:
         return f"error: {type(exc).__name__}: {exc}"
