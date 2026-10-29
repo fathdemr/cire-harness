@@ -1,29 +1,54 @@
 # cire-harness
 
+**A terminal coding agent that runs on any model, keeps its context in SQLite, and measures what every call costs.**
+
+[![CI](https://img.shields.io/github/actions/workflow/status/fathdemr/cire-harness/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/fathdemr/cire-harness/actions)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-147%20passing-2EA043?logo=pytest&logoColor=white)](tests)
+[![License MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![M8ven Score](https://m8ven.ai/badge/mcp/fathdemr-cire-harness-spfj31?v=037b2209a018f964b0704446e4ef47ba)](https://m8ven.ai/mcp/fathdemr-cire-harness-spfj31?s=readme)
 
-A multi-provider CLI agent harness. A strong **planner** model plans the work and verifies the results, while cheaper **executor** models do the heavy lifting. All context lives in a local SQLite store.
+Works with
+
+[![Anthropic](https://img.shields.io/badge/Anthropic-Claude-191919?logo=anthropic&logoColor=white)](#configuration)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT-412991?logo=openai&logoColor=white)](#configuration)
+[![AWS Bedrock](https://img.shields.io/badge/AWS%20Bedrock-Claude%20%C2%B7%20GPT%20%C2%B7%20any%20Converse%20model-FF9900?logo=amazonwebservices&logoColor=white)](#configuration)
+[![Ollama](https://img.shields.io/badge/Ollama-local%20models-000000?logo=ollama&logoColor=white)](#configuration)
+[![MCP](https://img.shields.io/badge/MCP-any%20server-5B5BD6?logo=modelcontextprotocol&logoColor=white)](#mcp-servers)
 
 ![cire chat TUI](docs/tui.svg)
 
 ## Why
 
-- **Lower cost:** expensive models only plan and verify, cheap models execute.
-- **Multi-provider:** mix Anthropic and OpenAI models in a single run.
-- **Local-first:** context is stored in SQLite on your machine, nothing is sent anywhere except to the model providers you configure.
+- **One interface, every provider.** Anthropic, OpenAI-compatible endpoints, AWS Bedrock through the Converse API, and local Ollama models share the same message and tool types. Small local models get a prompt-based tool-call fallback.
+- **Context lives in SQLite, not in the prompt.** Large tool outputs are stored and replaced by a preview and an id, the model recalls them on demand, and older messages are summarised when the token budget is hit.
+- **Planner and executor roles, measured.** A strong model can plan and verify while a cheaper one edits files. The built-in benchmark tells you whether that saves money for your tasks, and on small tasks it did not.
+- **Keys stay in your shell.** No credential is ever written to a file, every risky tool asks first, and MCP servers start with a minimal environment.
 
 ## How it works
 
 ```
-task -> planner (plan) -> executors (do the steps) -> planner (verify) -> result
-                               |
-                         local SQLite context
+ you ──▶ cire chat (Textual TUI)  or  cire run "task"
+              │
+              ▼
+        agent loop ──────▶ provider: anthropic · openai · bedrock · ollama
+              │
+              ├─ tools: read_file · write_file · edit_file · glob · grep · bash
+              ├─ recall ─────────────▶ stored tool results, FTS5 search
+              ├─ <server>_<tool> ───▶ MCP servers (stdio or Streamable HTTP)
+              └─ delegate ──────────▶ executor loop in a fresh context
+                                        └─ verify: acceptance commands, file scope
+              │
+              ▼
+        ~/.cire/cire.db  sessions · messages · tool_results · summaries · calls
 ```
 
-1. The planner breaks the task into steps.
-2. Executor models run each step.
-3. The planner verifies the output and requests fixes if needed.
-4. Plans, steps and results are persisted in SQLite.
+1. Your message goes to the planner model together with the tool list. Streaming text and tool calls show up live in the TUI.
+2. Shell commands, file writes and MCP tools ask for confirmation before they run.
+3. Tool results over 1500 characters are stored in SQLite and replaced in the prompt by a preview and an id. The model fetches them back with `recall`.
+4. When the conversation passes the token budget, older messages are summarised into one system message; the dropped text stays searchable.
+5. With an executor role configured, the planner can `delegate` a spec. The executor works with file tools only, the harness runs the acceptance commands, retries once with the failure output, and returns a short report instead of the executor's history.
+6. Every model call is recorded with role, model, tokens and duration. `cire stats` and `cire bench` turn that into cost numbers.
 
 ## Requirements
 
