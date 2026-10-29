@@ -8,7 +8,7 @@ from textual.widgets import RichLog, Static
 from cire_harness.config import MCPServer
 from cire_harness.context.store import ContextStore
 from cire_harness.providers.fake import FakeProvider
-from cire_harness.providers.types import Message, Response, StreamEvent, ToolCall
+from cire_harness.providers.types import Message, Response, StreamEvent, ToolCall, Usage
 from cire_harness.tools import ToolRegistry
 from cire_harness.tools.fs import fs_tools
 from cire_harness.tui.app import ChatApp
@@ -186,3 +186,44 @@ async def test_mcp_tools_join_registry_and_close_on_exit(store):
         assert any(line.startswith("mcp bad:") for line in lines)
         assert app.handle_command("/tools") == "echo.echo\necho.secret\necho.fail"
     assert app.mcp.closed
+
+
+async def test_delegate_runs_executor_with_confirmation(tmp_path, store):
+    from functools import partial
+
+    from cire_harness.orchestration.delegate import delegate_tool
+    from cire_harness.tui.app import ConfirmScreen
+
+    call = ToolCall(id="d", name="delegate", arguments={"goal": "write", "acceptance": ["true"]})
+    planner = FakeProvider([reply(calls=[call]), reply("planner done")])
+    write = ToolCall(id="w", name="write_file", arguments={"path": "x.txt", "content": "1"})
+    executor = FakeProvider(
+        [
+            Response(
+                message=Message(role="assistant", tool_calls=[write]), usage=Usage(input_tokens=7)
+            ),
+            reply("executor done"),
+        ]
+    )
+    app = ChatApp(
+        planner,
+        ToolRegistry([]),
+        [],
+        "t10",
+        store,
+        delegate=partial(delegate_tool, executor, tmp_path),
+    )
+    async with app.run_test() as pilot:
+        assert "delegate" in app.handle_command("/tools")
+        await pilot.press(*"go", "enter")
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, ConfirmScreen)
+        await pilot.click("#yes")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        lines = log_lines(app)
+        assert "[exec] -> write_file {'path': 'x.txt', 'content': '1'}" in lines
+        assert "[exec] executor done" in lines
+        assert lines[-1] == "planner done"
+        assert app.handle_command("/stats").endswith("executor: input=7 output=0 cached=0")
+    assert (tmp_path / "x.txt").read_text() == "1"

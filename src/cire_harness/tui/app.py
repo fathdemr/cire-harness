@@ -41,6 +41,7 @@ class ChatApp(App):
         store: ContextStore,
         budget: int = 8000,
         mcp_servers: dict[str, MCPServer] | None = None,
+        delegate=None,
     ):
         super().__init__()
         self.provider = provider
@@ -50,6 +51,8 @@ class ChatApp(App):
         self.store = store
         self.budget = budget
         self.usage = Usage()
+        self.exec_usage = Usage()
+        self.delegate = delegate
         self.worker = None
         self.mcp_servers = mcp_servers or {}
         self.mcp = MCPManager()
@@ -74,6 +77,9 @@ class ChatApp(App):
                     log.write(f"{message.content}")
         self.query_one(Input).focus()
         self.status = self.query_one("#status", Static)
+        if self.delegate is not None:
+            tool = self.delegate(self.approve, lambda e: self.show_event(e, "exec"))
+            self.registry.tools[tool.name] = tool
         self.set_interval(0.1, self.tick)
         self.mcp_task = asyncio.create_task(self.mcp_lifecycle())
 
@@ -102,21 +108,25 @@ class ChatApp(App):
             text += "\n" + self.partial[-500:]
         self.status.update(text)
 
-    def show_event(self, event):
+    def show_event(self, event, role: str = ""):
         log = self.query_one(RichLog)
+        tag = f"[{role}] " if role else ""
         if isinstance(event, Message):
-            log.write(f"<- {event.content[:200]}")
-            self.state = "thinking"
+            log.write(f"{tag}<- {event.content[:200]}")
+            self.state = f"{role or 'thinking'}"
         elif event.type == "text":
             self.partial += event.text
         elif event.type == "tool_call":
-            log.write(f"-> {event.tool_call.name} {event.tool_call.arguments}")
-            self.state = f"running {event.tool_call.name}"
+            log.write(f"{tag}-> {event.tool_call.name} {event.tool_call.arguments}")
+            self.state = f"{tag}running {event.tool_call.name}"
         elif event.type == "done":
             self.partial = ""
             if event.response.message.content:
-                log.write(event.response.message.content)
-            self.usage += event.response.usage
+                log.write(tag + event.response.message.content)
+            if role:
+                self.exec_usage += event.response.usage
+            else:
+                self.usage += event.response.usage
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.value.startswith("/"):
@@ -179,11 +189,17 @@ class ChatApp(App):
     def handle_command(self, text: str) -> str:
         cmd, *args = text.split()
         if cmd == "/stats":
-            u = self.usage
-            return (
+            u, e = self.usage, self.exec_usage
+            text = (
                 f"input={u.input_tokens} output={u.output_tokens} cached={u.cached_tokens} "
                 f"context~{estimate_tokens(self.messages)}/{self.budget}"
             )
+            if e != Usage():
+                text += (
+                    f"\nexecutor: input={e.input_tokens} output={e.output_tokens} "
+                    f"cached={e.cached_tokens}"
+                )
+            return text
         elif cmd == "/sessions":
             return "\n".join(self.store.list_sessions())
         elif cmd == "/model":

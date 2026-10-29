@@ -1,15 +1,17 @@
 import asyncio
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from cire_harness import __version__
-from cire_harness.config import MCPServer, load_config, save_config
+from cire_harness.config import ROLES, MCPServer, load_config, save_config
 from cire_harness.context.recall import recall_tools
 from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
+from cire_harness.orchestration.delegate import delegate_tool
 from cire_harness.providers import ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall
 from cire_harness.tools import ToolRegistry
@@ -21,6 +23,9 @@ from cire_harness.tui.app import ChatApp
 app = typer.Typer(no_args_is_help=True)
 mcp_app = typer.Typer(no_args_is_help=True, help="Manage MCP servers in ~/.cire/config.toml")
 app.add_typer(mcp_app, name="mcp")
+role_app = typer.Typer(no_args_is_help=True, help="Map planner/executor roles to provider:model")
+app.add_typer(role_app, name="role")
+DEFAULT_PROVIDER = "ollama:llama3.1"
 
 
 async def always(call: ToolCall) -> bool:
@@ -46,13 +51,22 @@ def main(
     pass
 
 
+def read_config():
+    try:
+        return load_config()
+    except ValueError as exc:
+        typer.echo(f"error: bad config: {exc}", err=True)
+        raise typer.Exit(1) from None
+
+
 @app.command()
 def run(
     prompt: str,
-    provider: str = typer.Option("ollama:llama3.1", "--provider", "-p"),
+    provider: str | None = typer.Option(None, "--provider", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip permission prompts"),
 ) -> None:
 
+    config = read_config()
     root = Path.cwd()
     registry = ToolRegistry(fs_tools(root) + grep_tools(root) + bash_tools(root))
     messages = [Message(role="user", content=prompt)]
@@ -60,7 +74,11 @@ def run(
     approve = always if yes else confirm
 
     try:
-        result = asyncio.run(run_agent(get_provider(provider), registry, messages, approve))
+        planner = get_provider(provider or config.roles.get("planner", DEFAULT_PROVIDER))
+        if executor := config.roles.get("executor"):
+            tool = delegate_tool(get_provider(executor), root, approve)
+            registry.tools[tool.name] = tool
+        result = asyncio.run(run_agent(planner, registry, messages, approve))
         typer.echo(result)
     except ProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -69,18 +87,15 @@ def run(
 
 @app.command()
 def chat(
-    provider: str = typer.Option("ollama:llama3.1", "--provider", "-p"),
+    provider: str | None = typer.Option(None, "--provider", "-p"),
     session: str | None = typer.Option(None, "--session", "-s"),
     budget: int = typer.Option(8000, "--budget", help="Token budget before compaction"),
 ) -> None:
 
+    config = read_config()
     store = ContextStore()
     try:
-        config = load_config()
         messages = store.load_messages(session) if session else []
-    except ValueError as exc:
-        typer.echo(f"error: bad config: {exc}", err=True)
-        raise typer.Exit(1) from None
     except KeyError:
         typer.echo(f"error: no session {session}", err=True)
         raise typer.Exit(1) from None
@@ -92,9 +107,11 @@ def chat(
     )
 
     try:
-        ChatApp(
-            get_provider(provider), registry, messages, session_id, store, budget, config.mcp
-        ).run()
+        planner = get_provider(provider or config.roles.get("planner", DEFAULT_PROVIDER))
+        delegate = None
+        if executor := config.roles.get("executor"):
+            delegate = partial(delegate_tool, get_provider(executor), root)
+        ChatApp(planner, registry, messages, session_id, store, budget, config.mcp, delegate).run()
     except ProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from None
@@ -132,11 +149,7 @@ def mcp_add(
 
 @mcp_app.command("list")
 def mcp_list() -> None:
-    try:
-        config = load_config()
-    except ValueError as exc:
-        typer.echo(f"error: bad config: {exc}", err=True)
-        raise typer.Exit(1) from None
+    config = read_config()
     for name, server in config.mcp.items():
         target = server.url or " ".join([server.command, *server.args])
         flags = [f"env={','.join(server.env)}"] if server.env else []
@@ -154,3 +167,36 @@ def mcp_remove(name: str) -> None:
     del config.mcp[name]
     save_config(config)
     typer.echo(f"removed {name}")
+
+
+@role_app.command("set")
+def role_set(name: str, spec: str) -> None:
+    if name not in ROLES:
+        typer.echo(f"error: unknown role {name!r}, expected one of {', '.join(ROLES)}", err=True)
+        raise typer.Exit(1)
+    try:
+        get_provider(spec)
+    except ProviderError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from None
+    config = read_config()
+    config.roles[name] = spec
+    typer.echo(f"{name} = {spec} saved to {save_config(config)}")
+
+
+@role_app.command("list")
+def role_list() -> None:
+    config = read_config()
+    for name in ROLES:
+        typer.echo(f"{name}: {config.roles.get(name, '(unset)')}")
+
+
+@role_app.command("unset")
+def role_unset(name: str) -> None:
+    config = read_config()
+    if name not in config.roles:
+        typer.echo(f"error: role {name} is not set", err=True)
+        raise typer.Exit(1)
+    del config.roles[name]
+    save_config(config)
+    typer.echo(f"unset {name}")

@@ -51,3 +51,27 @@ def test_mcp_add_rejects_env_values_and_missing_transport(tmp_path, monkeypatch)
     assert result.exit_code == 1
     assert "never a value" in result.output
     assert runner.invoke(app, ["mcp", "add", "x"]).exit_code == 1
+
+
+def test_role_set_list_unset(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert runner.invoke(app, ["role", "set", "executor", "ollama:llama3.1"]).exit_code == 0
+    assert runner.invoke(app, ["role", "set", "boss", "ollama:x"]).exit_code == 1
+    assert runner.invoke(app, ["role", "set", "planner", "nonsense"]).exit_code == 1
+    listed = runner.invoke(app, ["role", "list"]).output
+    assert "executor: ollama:llama3.1" in listed and "planner: (unset)" in listed
+    assert runner.invoke(app, ["role", "unset", "executor"]).exit_code == 0
+    assert runner.invoke(app, ["role", "unset", "executor"]).exit_code == 1
+
+
+def test_run_uses_planner_role_and_registers_delegate(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner.invoke(app, ["role", "set", "planner", "ollama:big"])
+    runner.invoke(app, ["role", "set", "executor", "ollama:small"])
+    fake = FakeProvider([Response(message=Message(role="assistant", content="hi there"))])
+    seen = []
+    monkeypatch.setattr("cire_harness.cli.get_provider", lambda spec: seen.append(spec) or fake)
+    result = runner.invoke(app, ["run", "hello", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert seen == ["ollama:big", "ollama:small"]
+    assert "delegate" in [t.name for t in fake.calls[0][1]]
