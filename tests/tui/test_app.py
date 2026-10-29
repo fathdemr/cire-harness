@@ -1,9 +1,11 @@
+import asyncio
+
 import pytest
-from textual.widgets import RichLog
+from textual.widgets import RichLog, Static
 
 from cire_harness.context.store import ContextStore
 from cire_harness.providers.fake import FakeProvider
-from cire_harness.providers.types import Message, Response, ToolCall
+from cire_harness.providers.types import Message, Response, StreamEvent, ToolCall
 from cire_harness.tools import ToolRegistry
 from cire_harness.tools.fs import fs_tools
 from cire_harness.tui.app import ChatApp
@@ -108,3 +110,54 @@ async def test_command_does_not_reach_agent(store):
         await pilot.pause()
         assert log_lines(app) == ["input=0 output=0 cached=0 context~0/8000"]
     assert app.messages == []
+
+
+class SlowProvider(FakeProvider):
+    async def stream(self, messages, tools=()):
+        await asyncio.sleep(5)
+        async for event in super().stream(messages, tools):
+            yield event
+
+
+def status(app):
+    return str(app.query_one("#status", Static).content)
+
+
+async def test_status_shows_activity_and_escape_stops(store):
+    app = ChatApp(SlowProvider([reply("late")]), ToolRegistry([]), [], "t6", store)
+    async with app.run_test() as pilot:
+        await pilot.press(*"hi", "enter")
+        await pilot.pause(0.3)
+        assert "thinking" in status(app)
+        await pilot.press("escape")
+        await app.workers.wait_for_complete()
+        await pilot.pause(0.3)
+        assert log_lines(app) == ["you: hi", "stopped"]
+        assert status(app) == ""
+    assert [m.role for m in app.messages] == ["user"]
+    assert store.load_messages("t6") == app.messages
+
+
+async def test_streamed_text_appears_in_status(store):
+    class Streamer(FakeProvider):
+        async def stream(self, messages, tools=()):
+            yield StreamEvent(type="text", text="partial words")
+            await asyncio.sleep(5)
+            yield StreamEvent(type="done", response=reply("final"))
+
+    app = ChatApp(Streamer([]), ToolRegistry([]), [], "t7", store)
+    async with app.run_test() as pilot:
+        await pilot.press(*"go", "enter")
+        await pilot.pause(0.3)
+        assert "partial words" in status(app)
+        app.action_stop()
+        await app.workers.wait_for_complete()
+
+
+async def test_provider_error_is_logged_not_fatal(store):
+    app = ChatApp(FakeProvider([]), ToolRegistry([]), [], "t8", store)
+    async with app.run_test() as pilot:
+        await pilot.press(*"x", "enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert log_lines(app)[-1].startswith("error: fake provider has no responses")

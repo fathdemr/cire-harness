@@ -1,12 +1,16 @@
+import asyncio
+
 from textual.app import App
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, RichLog
+from textual.widgets import Button, Input, Label, RichLog, Static
 
 from cire_harness.context.compactor import KEEP_MESSAGES, compact, estimate_tokens, split_point
 from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
 from cire_harness.providers import ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall, Usage
+
+FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -24,6 +28,8 @@ class ConfirmScreen(ModalScreen[bool]):
 
 
 class ChatApp(App):
+    BINDINGS = [("escape", "stop", "Stop")]
+
     def __init__(
         self,
         provider,
@@ -41,9 +47,14 @@ class ChatApp(App):
         self.store = store
         self.budget = budget
         self.usage = Usage()
+        self.worker = None
+        self.state = ""
+        self.partial = ""
+        self.frame = 0
 
     def compose(self):
         yield RichLog(wrap=True)
+        yield Static(id="status")
         yield Input(placeholder="...")
 
     def on_mount(self):
@@ -55,18 +66,33 @@ class ChatApp(App):
                 if message.content:
                     log.write(f"{message.content}")
         self.query_one(Input).focus()
+        self.set_interval(0.1, self.tick)
+
+    def tick(self):
+        if not self.state:
+            self.query_one("#status", Static).update("")
+            return
+        self.frame = (self.frame + 1) % len(FRAMES)
+        text = f"{FRAMES[self.frame]} {self.state}  (esc to stop)"
+        if self.partial:
+            text += "\n" + self.partial[-500:]
+        self.query_one("#status", Static).update(text)
 
     def show_event(self, event):
         log = self.query_one(RichLog)
         if isinstance(event, Message):
             log.write(f"<- {event.content[:200]}")
-        else:
-            if event.type == "tool_call":
-                log.write(f"-> {event.tool_call.name} {event.tool_call.arguments}")
-            elif event.type == "done":
-                if event.response.message.content:
-                    log.write(event.response.message.content)
-                self.usage += event.response.usage
+            self.state = "thinking"
+        elif event.type == "text":
+            self.partial += event.text
+        elif event.type == "tool_call":
+            log.write(f"-> {event.tool_call.name} {event.tool_call.arguments}")
+            self.state = f"running {event.tool_call.name}"
+        elif event.type == "done":
+            self.partial = ""
+            if event.response.message.content:
+                log.write(event.response.message.content)
+            self.usage += event.response.usage
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.value.startswith("/"):
@@ -78,23 +104,39 @@ class ChatApp(App):
         event.input.value = ""
         self.query_one(RichLog).write(f"you: {event.value}")
         self.messages.append(message)
-        self.run_worker(self.ask())
+        self.worker = self.run_worker(self.ask())
+
+    def action_stop(self) -> None:
+        if self.worker is not None and self.worker.is_running:
+            self.worker.cancel()
 
     async def approve(self, call: ToolCall) -> bool:
         return await self.push_screen_wait(ConfirmScreen(f"run {call.name} {call.arguments}?"))
 
     async def ask(self):
-        await run_agent(
-            self.provider,
-            self.registry,
-            self.messages,
-            on_event=self.show_event,
-            approve=self.approve,
-            mask=lambda call, result: self.store.mask(self.session_id, call, result),
-        )
-        if estimate_tokens(self.messages) > self.budget:
-            await self.compact()
-        self.store.save_messages(self.session_id, self.messages)
+        self.state = "thinking"
+        try:
+            await run_agent(
+                self.provider,
+                self.registry,
+                self.messages,
+                on_event=self.show_event,
+                approve=self.approve,
+                mask=lambda call, result: self.store.mask(self.session_id, call, result),
+            )
+            if estimate_tokens(self.messages) > self.budget:
+                await self.compact()
+        except asyncio.CancelledError:
+            while self.messages and self.messages[-1].role != "user":
+                self.messages.pop()
+            if self.is_running:
+                self.query_one(RichLog).write("stopped")
+        except ProviderError as exc:
+            self.query_one(RichLog).write(f"error: {exc}")
+        finally:
+            self.state = ""
+            self.partial = ""
+            self.store.save_messages(self.session_id, self.messages)
 
     async def compact(self) -> None:
         before = estimate_tokens(self.messages)
