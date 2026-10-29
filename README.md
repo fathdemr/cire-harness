@@ -142,7 +142,17 @@ uv run cire bench run --baseline bedrock:eu.anthropic.claude-sonnet-4-5-20250929
   --executor ollama:llama3.1 --repeat 2
 ```
 
-The run compares **single** (the baseline model alone, all tools) with **split** (planner + cheaper executor through `delegate`) and writes `docs/BENCHMARKS.md` plus raw JSON under `benchmarks/results/`. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for the latest numbers.
+The run compares **single** (the baseline model alone, all tools) with **split** (planner + cheaper executor through `delegate`) and writes `docs/BENCHMARKS.md` plus raw JSON under `benchmarks/results/`. Full tables: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+Results from 2026-10-29, one run per task, five tasks, all passed in every configuration:
+
+| Configuration | Avg cost / task | Avg seconds / task |
+| --- | --- | --- |
+| Claude Sonnet 4.5 alone | 0.057 USD | 21 |
+| Claude Sonnet 4.5 planner + llama3.1 executor | 0.088 USD | 147 |
+| gpt-oss-120b planner + llama3.1 executor | 0.004 USD | 42 |
+
+What this says: on tasks this small the planner/executor split does not pay for itself with a strong planner. The planner still reads the repo, writes the spec, reads the report and re-checks the result, so its tokens exceed what it would spend just doing the edit, and a local 8B executor needs retries. The split wins when the planner is cheap (gpt-oss) or, presumably, when executor work dominates. Measure before you route.
 
 ## Project structure
 
