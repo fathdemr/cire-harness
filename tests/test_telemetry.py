@@ -32,7 +32,7 @@ def test_estimate_cost_known_unknown_and_overrides():
         estimate_cost("bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0", 1_000_000, 0)
         == 3.0
     )
-    assert estimate_cost("ollama", "llama3.1", 1_000_000, 1_000_000) == 0.0
+    assert estimate_cost("ollama+prompt-tools", "llama3.1", 1_000_000, 1_000_000) == 0.0
     assert estimate_cost("openai", "mystery-model", 10, 10) is None
     prices = {"mystery-model": {"input": 1.0, "output": 2.0}}
     assert estimate_cost("openai", "mystery-model", 1_000_000, 1_000_000, prices) == 3.0

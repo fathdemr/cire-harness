@@ -121,15 +121,40 @@ Slash commands in the chat: `/model`, `/sessions`, `/stats`, `/tools`, `/compact
 
 Large tool outputs are stored in SQLite and replaced in the prompt by a short preview and an id. The model fetches them back with the `recall` tool. When the context passes the token budget (`--budget`, default 8000) older messages are summarised automatically.
 
+## Measuring cost
+
+Every model call is recorded in the local SQLite store with its role, model, tokens and duration:
+
+```bash
+uv run cire stats                 # totals per role and model, with estimated USD
+uv run cire stats -s <session>    # one chat session
+```
+
+Prices for common models are built in; add your own under `[prices."model-name"]` in the config (USD per million input and output tokens). Ollama counts as free.
+
+## Benchmarks
+
+`benchmarks/tasks/` holds five small repository tasks (fix a failing test, rename across files, implement a module from a spec, add a CLI flag, write tests). Each has a fixture repo and shell acceptance commands, so success is decided by the commands, not by a model.
+
+```bash
+uv run cire bench run --baseline bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --planner bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --executor ollama:llama3.1 --repeat 2
+```
+
+The run compares **single** (the baseline model alone, all tools) with **split** (planner + cheaper executor through `delegate`) and writes `docs/BENCHMARKS.md` plus raw JSON under `benchmarks/results/`. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for the latest numbers.
+
 ## Project structure
 
 ```
 src/cire_harness/
-  cli.py        cire run / chat / mcp
+  cli.py        cire run / chat / mcp / role / stats / bench
   config.py     ~/.cire/config.toml
   providers/    Anthropic, OpenAI-compatible, Ollama, Bedrock, prompt-based tool fallback
   loop/         agent loop and tool execution
   orchestration/ task spec, executor loop, deterministic verification, delegate tool
+  bench/        benchmark tasks runner and report
+  telemetry.py  per-call usage records and price table
   tools/        read, write, edit, bash, grep
   mcp/          MCP client and tool adapter
   context/      SQLite store, masking, recall, compaction

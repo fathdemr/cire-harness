@@ -33,7 +33,7 @@ Sink = Callable[[CallRecord], None]
 def estimate_cost(
     provider: str, model: str, input_tokens: int, output_tokens: int, prices=None
 ) -> float | None:
-    if provider == "ollama":
+    if provider.startswith("ollama"):
         return 0.0
     table = dict(PRICES_PER_MILLION)
     table.update({k: (v["input"], v["output"]) for k, v in (prices or {}).items()})
