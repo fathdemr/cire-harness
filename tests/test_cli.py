@@ -3,7 +3,7 @@ from typer.testing import CliRunner
 from cire_harness import __version__
 from cire_harness.cli import app
 from cire_harness.providers.fake import FakeProvider
-from cire_harness.providers.types import Message, Response
+from cire_harness.providers.types import Message, Response, Usage
 
 runner = CliRunner()
 
@@ -75,3 +75,25 @@ def test_run_uses_planner_role_and_registers_delegate(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert seen == ["ollama:big", "ollama:small"]
     assert "delegate" in [t.name for t in fake.calls[0][1]]
+
+
+def test_run_records_calls_and_stats_prints_them(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    fake = FakeProvider(
+        [
+            Response(
+                message=Message(role="assistant", content="hi"), usage=Usage(input_tokens=1_000_000)
+            )
+        ]
+    )
+    monkeypatch.setattr("cire_harness.cli.get_provider", lambda spec: fake)
+    assert runner.invoke(app, ["run", "hello", "--yes"]).exit_code == 0
+    out = runner.invoke(app, ["stats"]).output
+    assert "planner" in out and "fake-model" in out
+    assert "unknown prices" in out
+    (tmp_path / ".cire" / "config.toml").write_text(
+        '[prices."fake-model"]\ninput = 2.0\noutput = 1.0\n'
+    )
+    out = runner.invoke(app, ["stats"]).output
+    assert "total estimated cost: 2.0000 usd" in out
+    assert runner.invoke(app, ["stats", "-s", "nope"]).output.strip() == "no recorded calls"

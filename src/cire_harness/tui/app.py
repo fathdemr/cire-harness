@@ -12,6 +12,7 @@ from cire_harness.loop.loop import run_agent
 from cire_harness.mcp.client import MCPManager
 from cire_harness.providers import ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall, Usage
+from cire_harness.telemetry import Metered
 
 FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -218,7 +219,11 @@ class ChatApp(App):
                 return self.provider.model
             else:
                 try:
-                    self.provider = get_provider(args[0])
+                    self.provider = Metered(
+                        get_provider(args[0]),
+                        "planner",
+                        lambda r: self.store.save_call(self.session_id, r),
+                    )
                     return f"model: {self.provider.model}"
                 except ProviderError as exc:
                     return f"error: {exc}"

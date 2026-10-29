@@ -60,3 +60,11 @@ def test_roles_round_trip_and_validation(tmp_path):
         path.write_text(body)
         with pytest.raises(ValidationError):
             load_config(path)
+
+
+def test_prices_round_trip(tmp_path):
+    from cire_harness.config import Config, Price, save_config
+
+    config = Config(prices={"my-model": Price(input=1.5, output=6)})
+    path = save_config(config, tmp_path / "config.toml")
+    assert load_config(path) == config

@@ -37,8 +37,14 @@ class MCPServer(BaseModel):
 ROLES = ("planner", "executor", "compactor")
 
 
+class Price(BaseModel):
+    input: float = Field(ge=0)
+    output: float = Field(ge=0)
+
+
 class Config(BaseModel):
     roles: dict[str, str] = Field(default_factory=dict)
+    prices: dict[str, Price] = Field(default_factory=dict)
     mcp: dict[str, MCPServer] = Field(default_factory=dict)
 
     @field_validator("roles")
@@ -66,6 +72,9 @@ def save_config(config: Config, path: Path | None = None) -> Path:
         lines.append("[roles]")
         lines += [f"{name} = {json.dumps(spec)}" for name, spec in config.roles.items()]
         lines.append("")
+    for name, price in config.prices.items():
+        lines.append(f"[prices.{json.dumps(name)}]")
+        lines += [f"input = {price.input}", f"output = {price.output}", ""]
     for name, server in config.mcp.items():
         lines.append(f"[mcp.{json.dumps(name)}]")
         for key, value in server.model_dump(exclude_defaults=True).items():

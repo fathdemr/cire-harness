@@ -14,6 +14,7 @@ from cire_harness.loop.loop import run_agent
 from cire_harness.orchestration.delegate import delegate_tool
 from cire_harness.providers import KINDS, ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall
+from cire_harness.telemetry import Metered, estimate_cost
 from cire_harness.tools import ToolRegistry
 from cire_harness.tools.bash import bash_tools
 from cire_harness.tools.fs import fs_tools
@@ -67,16 +68,21 @@ def run(
 ) -> None:
 
     config = read_config()
+    store = ContextStore()
+    session_id = "run-" + datetime.now().strftime("%Y%m%d-%H%M%S")
     root = Path.cwd()
     registry = ToolRegistry(fs_tools(root) + grep_tools(root) + bash_tools(root))
     messages = [Message(role="user", content=prompt)]
 
     approve = always if yes else confirm
 
+    def meter(spec: str, role: str):
+        return Metered(get_provider(spec), role, partial(store.save_call, session_id))
+
     try:
-        planner = get_provider(provider or config.roles.get("planner", DEFAULT_PROVIDER))
+        planner = meter(provider or config.roles.get("planner", DEFAULT_PROVIDER), "planner")
         if executor := config.roles.get("executor"):
-            tool = delegate_tool(get_provider(executor), root, approve)
+            tool = delegate_tool(meter(executor, "executor"), root, approve)
             registry.tools[tool.name] = tool
         result = asyncio.run(run_agent(planner, registry, messages, approve))
         typer.echo(result)
@@ -106,11 +112,14 @@ def chat(
         fs_tools(root) + bash_tools(root) + grep_tools(root) + recall_tools(store, session_id)
     )
 
+    def meter(spec: str, role: str):
+        return Metered(get_provider(spec), role, partial(store.save_call, session_id))
+
     try:
-        planner = get_provider(provider or config.roles.get("planner", DEFAULT_PROVIDER))
+        planner = meter(provider or config.roles.get("planner", DEFAULT_PROVIDER), "planner")
         delegate = None
         if executor := config.roles.get("executor"):
-            delegate = partial(delegate_tool, get_provider(executor), root)
+            delegate = partial(delegate_tool, meter(executor, "executor"), root)
         ChatApp(planner, registry, messages, session_id, store, budget, config.mcp, delegate).run()
     except ProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -201,3 +210,31 @@ def role_unset(name: str) -> None:
     del config.roles[name]
     save_config(config)
     typer.echo(f"unset {name}")
+
+
+@app.command()
+def stats(session: str | None = typer.Option(None, "--session", "-s")) -> None:
+    config = read_config()
+    prices = {k: v.model_dump() for k, v in config.prices.items()}
+    rows = ContextStore().call_totals(session)
+    if not rows:
+        typer.echo("no recorded calls")
+        return
+    typer.echo(
+        f"{'role':<9}{'provider':<10}{'model':<44}{'calls':>6}{'in':>9}{'out':>8}{'cached':>8}{'secs':>8}{'usd':>9}"
+    )
+    total = 0.0
+    unknown = False
+    for role, provider, model, calls, tin, tout, tcached, secs in rows:
+        cost = estimate_cost(provider, model, tin, tout, prices)
+        if cost is None:
+            unknown = True
+            shown = "?"
+        else:
+            total += cost
+            shown = f"{cost:.4f}"
+        typer.echo(
+            f"{role:<9}{provider:<10}{model[:43]:<44}{calls:>6}{tin:>9}{tout:>8}{tcached:>8}{secs:>8.1f}{shown:>9}"
+        )
+    note = " (+ unknown prices, add [prices] to config)" if unknown else ""
+    typer.echo(f"total estimated cost: {total:.4f} usd{note}")

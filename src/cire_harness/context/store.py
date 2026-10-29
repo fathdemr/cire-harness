@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from cire_harness.providers.types import Message, ToolCall
+from cire_harness.telemetry import CallRecord
 
 MASK_CHARS = 1500
 HEAD_CHARS = 300
@@ -28,6 +29,18 @@ CREATE TABLE IF NOT EXISTS summaries (
     id INTEGER PRIMARY KEY,
     session_id TEXT NOT NULL,
     content TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS calls (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cached_tokens INTEGER NOT NULL,
+    duration REAL NOT NULL,
     created_at REAL NOT NULL
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS recall_fts USING fts5(
@@ -113,3 +126,32 @@ class ContextStore:
             (query, session_id, limit),
         )
         return list(rows)
+
+    def save_call(self, session_id: str, record: CallRecord) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO calls (session_id, role, provider, model, input_tokens, "
+                "output_tokens, cached_tokens, duration, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    record.role,
+                    record.provider,
+                    record.model,
+                    record.input_tokens,
+                    record.output_tokens,
+                    record.cached_tokens,
+                    record.duration,
+                    time.time(),
+                ),
+            )
+
+    def call_totals(self, session_id: str | None = None) -> list[tuple]:
+        where = "WHERE session_id = ?" if session_id else ""
+        params = (session_id,) if session_id else ()
+        return self.conn.execute(
+            "SELECT role, provider, model, COUNT(*), SUM(input_tokens), SUM(output_tokens), "
+            f"SUM(cached_tokens), SUM(duration) FROM calls {where} "
+            "GROUP BY role, provider, model ORDER BY role, provider, model",
+            params,
+        ).fetchall()
