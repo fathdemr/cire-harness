@@ -6,6 +6,19 @@ from pathlib import Path
 
 from cire_harness.bench.runner import RunResult
 
+HEADER = [
+    "# Benchmarks",
+    "",
+    "Modes: **single** runs one model with all tools. **split** runs the planner with the "
+    "`delegate` tool and a cheaper executor doing the file work in a fresh context. Success is "
+    "decided only by each task's acceptance commands.",
+    "",
+    "Cost is estimated from the price table in `cire_harness/telemetry.py` (USD per million "
+    "tokens); Ollama counts as free. A `?` means a model without a known price. Token counts in "
+    "split mode add planner and executor together.",
+    "",
+]
+
 
 def fmt_cost(value: float | None) -> str:
     return "?" if value is None else f"{value:.4f}"
@@ -67,24 +80,15 @@ def git_commit() -> str:
         return "unknown"
 
 
-def render_markdown(
-    results: list[RunResult], models: dict[str, str], command: str, prices=None
-) -> str:
+def render_section(payload: dict, prices=None) -> list[str]:
+    results = [RunResult.model_validate(r) for r in payload["results"]]
     rows = summarize(results, prices)
     lines = [
-        "# Benchmarks",
-        "",
-        f"Generated {datetime.now():%Y-%m-%d %H:%M} at commit `{git_commit()}`.",
-        "",
-        "Modes: **single** runs one model with all tools. **split** runs the planner with the "
-        "`delegate` tool and a cheaper executor doing the file work in a fresh context.",
+        f"## {payload['generated']} at commit `{payload['commit']}`",
         "",
         "| Role | Model |",
         "| --- | --- |",
-        *[f"| {role} | `{spec}` |" for role, spec in models.items()],
-        "",
-        "Cost is estimated from the price table in `cire_harness/telemetry.py` (USD per million "
-        "tokens); Ollama counts as free. A `?` means a model without a known price.",
+        *[f"| {role} | `{spec}` |" for role, spec in payload["models"].items()],
         "",
         "| Task | Mode | Passed | Avg cost (USD) | Avg tokens in / out | Avg seconds |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -95,13 +99,32 @@ def render_markdown(
             f"{fmt_cost(row['avg_cost'])} | {row['avg_in']:.0f} / {row['avg_out']:.0f} | "
             f"{row['avg_seconds']:.0f} |"
         )
-    lines += ["", "Reproduce:", "", "```", command, "```", ""]
+    lines += ["", "```", payload["command"], "```", ""]
+    return lines
+
+
+def render_markdown(results_dir: Path, prices=None) -> str:
+    files = sorted(results_dir.glob("*.json"), reverse=True)
+    lines = list(HEADER)
+    for path in files:
+        lines += render_section(json.loads(path.read_text(encoding="utf-8")), prices)
+    if not files:
+        lines.append("No results yet. Run `cire bench run`.")
     return "\n".join(lines)
 
 
-def save_results(results: list[RunResult], folder: Path, models: dict[str, str]) -> Path:
+def save_results(
+    results: list[RunResult], folder: Path, models: dict[str, str], command: str
+) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{datetime.now():%Y%m%d-%H%M%S}.json"
-    payload = {"models": models, "results": [r.model_dump() for r in results]}
+    now = datetime.now()
+    path = folder / f"{now:%Y%m%d-%H%M%S}.json"
+    payload = {
+        "generated": f"{now:%Y-%m-%d %H:%M}",
+        "commit": git_commit(),
+        "command": command,
+        "models": models,
+        "results": [r.model_dump() for r in results],
+    }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path

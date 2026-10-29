@@ -76,8 +76,11 @@ async def test_report_tables_and_json(tmp_path):
     assert rows[0]["passed"] == 1 and rows[0]["runs"] == 2
     assert rows[0]["avg_cost"] > 0
     assert totals(rows)[0]["task"] == "**all**"
-    md = render_markdown(results, {"baseline (single)": "fake:fake-model"}, "uv run cire bench run")
-    assert "| demo | single | 1/2 | ? |" in md
-    assert "uv run cire bench run" in md
-    path = save_results(results, tmp_path / "results", {})
+    folder = tmp_path / "results"
+    assert "No results yet" in render_markdown(folder)
+    path = save_results(results, folder, {"baseline (single)": "fake:fake-model"}, "uv run x")
     assert Path(path).suffix == ".json" and "verification" in path.read_text()
+    md = render_markdown(folder)
+    assert "| demo | single | 1/2 | ? |" in md
+    assert "| baseline (single) | `fake:fake-model` |" in md and "uv run x" in md
+    assert md.count("## ") == 1

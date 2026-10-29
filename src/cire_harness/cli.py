@@ -28,6 +28,7 @@ role_app = typer.Typer(no_args_is_help=True, help="Map planner/executor roles to
 app.add_typer(role_app, name="role")
 bench_app = typer.Typer(no_args_is_help=True, help="Run the benchmark task set")
 app.add_typer(bench_app, name="bench")
+RESULTS_DIR = Path("benchmarks/results")
 DEFAULT_PROVIDER = "ollama:llama3.1"
 
 
@@ -255,7 +256,7 @@ def bench_run(
 ) -> None:
     import sys
 
-    from cire_harness.bench.report import render_markdown, save_results
+    from cire_harness.bench.report import save_results
     from cire_harness.bench.runner import run_task
     from cire_harness.bench.tasks import load_tasks
 
@@ -304,9 +305,21 @@ def bench_run(
         return results
 
     results = asyncio.run(run_all())
-    prices = {k: v.model_dump() for k, v in config.prices.items()}
     command = "uv run cire " + " ".join(sys.argv[1:])
+    raw = save_results(results, RESULTS_DIR, models, command)
+    write_report(out, config)
+    typer.echo(f"wrote {raw} and {out}")
+
+
+def write_report(out: Path, config) -> None:
+    from cire_harness.bench.report import render_markdown
+
+    prices = {k: v.model_dump() for k, v in config.prices.items()}
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render_markdown(results, models, command, prices), encoding="utf-8")
-    raw = save_results(results, Path("benchmarks/results"), models)
-    typer.echo(f"wrote {out} and {raw}")
+    out.write_text(render_markdown(RESULTS_DIR, prices), encoding="utf-8")
+
+
+@bench_app.command("report")
+def bench_report(out: Annotated[Path, typer.Option("--out")] = Path("docs/BENCHMARKS.md")) -> None:
+    write_report(out, read_config())
+    typer.echo(f"wrote {out}")

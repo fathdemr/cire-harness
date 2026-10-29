@@ -137,5 +137,8 @@ def test_bench_run_writes_report(tmp_path, monkeypatch):
     assert "demo [single] run 1/1 ... ok" in result.output
     assert "| demo | single | 1/1 |" in (tmp_path / "out" / "B.md").read_text()
     assert list((tmp_path / "benchmarks" / "results").glob("*.json"))
+    (tmp_path / "out" / "B.md").unlink()
+    assert runner.invoke(app, ["bench", "report", "--out", "out/B.md"]).exit_code == 0
+    assert "| demo | single | 1/1 |" in (tmp_path / "out" / "B.md").read_text()
     result = runner.invoke(app, ["bench", "run", "--baseline", "fake:x", "--tasks", "tasks"])
     assert result.exit_code == 1 and "split mode needs" in result.output

@@ -7,4 +7,3 @@ dist/
 .idea/
 *.db
 .env
-benchmarks/results/
