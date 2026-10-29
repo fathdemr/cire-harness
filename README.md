@@ -4,6 +4,8 @@
 
 A multi-provider CLI agent harness. A strong **planner** model plans the work and verifies the results, while cheaper **executor** models do the heavy lifting. All context lives in a local SQLite store.
 
+![cire chat TUI](docs/tui.svg)
+
 ## Why
 
 - **Lower cost:** expensive models only plan and verify, cheap models execute.

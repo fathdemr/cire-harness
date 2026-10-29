@@ -21,7 +21,19 @@ from cire_harness.tools.fs import fs_tools
 from cire_harness.tools.grep import grep_tools
 from cire_harness.tui.app import ChatApp
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    help="Multi-provider coding agent: a planner model plans and verifies, cheaper executors "
+    "do the work, context lives in a local SQLite store.",
+    epilog="Examples:\n\n"
+    "  cire chat                                  chat TUI\n\n"
+    "  cire run 'list the python files' -y        one-shot task\n\n"
+    "  cire role set executor ollama:llama3.1     local executor\n\n"
+    "  cire mcp add fs -- npx -y @modelcontextprotocol/server-filesystem .\n\n"
+    "Keys are read from the environment only: ANTHROPIC_API_KEY, OPENAI_API_KEY, "
+    "AWS_BEARER_TOKEN_BEDROCK with AWS_REGION.",
+)
 mcp_app = typer.Typer(no_args_is_help=True, help="Manage MCP servers in ~/.cire/config.toml")
 app.add_typer(mcp_app, name="mcp")
 role_app = typer.Typer(no_args_is_help=True, help="Map planner/executor roles to provider:model")
@@ -63,11 +75,13 @@ def read_config():
         raise typer.Exit(1) from None
 
 
-@app.command()
+@app.command(help="Run one task in the current directory and print the answer.")
 def run(
-    prompt: str,
-    provider: str | None = typer.Option(None, "--provider", "-p"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip permission prompts"),
+    prompt: str = typer.Argument(..., help="What to do, in plain language"),
+    provider: str | None = typer.Option(
+        None, "--provider", "-p", help="kind:model, overrides the planner role"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Approve risky tools without asking"),
 ) -> None:
 
     config = read_config()
@@ -94,11 +108,17 @@ def run(
         raise typer.Exit(1) from None
 
 
-@app.command()
+@app.command(help="Open the chat TUI. Type / to see slash commands, Esc stops a turn.")
 def chat(
-    provider: str | None = typer.Option(None, "--provider", "-p"),
-    session: str | None = typer.Option(None, "--session", "-s"),
-    budget: int = typer.Option(8000, "--budget", help="Token budget before compaction"),
+    provider: str | None = typer.Option(
+        None, "--provider", "-p", help="kind:model, overrides the planner role"
+    ),
+    session: str | None = typer.Option(
+        None, "--session", "-s", help="Resume a saved session id (see /sessions)"
+    ),
+    budget: int = typer.Option(
+        8000, "--budget", help="Approximate token budget before older messages are summarised"
+    ),
 ) -> None:
 
     config = read_config()
@@ -129,9 +149,12 @@ def chat(
         raise typer.Exit(1) from None
 
 
-@mcp_app.command("add")
+@mcp_app.command(
+    "add",
+    help="Register an MCP server. Put the command after --, or give --url for Streamable HTTP.",
+)
 def mcp_add(
-    name: str,
+    name: str = typer.Argument(..., help="Short name, becomes the tool prefix: name_tool"),
     command: Annotated[list[str] | None, typer.Argument(help="Command and args, after --")] = None,
     url: str = typer.Option("", "--url", help="Streamable HTTP endpoint instead of a command"),
     env: Annotated[
@@ -159,7 +182,7 @@ def mcp_add(
         typer.echo(f"make sure these are set in your shell: {' '.join(env)}")
 
 
-@mcp_app.command("list")
+@mcp_app.command("list", help="List registered MCP servers.")
 def mcp_list() -> None:
     config = read_config()
     for name, server in config.mcp.items():
@@ -170,8 +193,8 @@ def mcp_list() -> None:
         typer.echo(f"{name}: {target}" + (f"  [{' '.join(flags)}]" if flags else ""))
 
 
-@mcp_app.command("remove")
-def mcp_remove(name: str) -> None:
+@mcp_app.command("remove", help="Remove an MCP server from the config.")
+def mcp_remove(name: str = typer.Argument(..., help="Server name")) -> None:
     config = load_config()
     if name not in config.mcp:
         typer.echo(f"error: no server {name}", err=True)
@@ -181,8 +204,13 @@ def mcp_remove(name: str) -> None:
     typer.echo(f"removed {name}")
 
 
-@role_app.command("set")
-def role_set(name: str, spec: str) -> None:
+@role_app.command(
+    "set", help="Map a role to a model, for example: role set executor ollama:llama3.1"
+)
+def role_set(
+    name: str = typer.Argument(..., help="planner, executor or compactor"),
+    spec: str = typer.Argument(..., help="kind:model, kinds: anthropic, openai, ollama, bedrock"),
+) -> None:
     if name not in ROLES:
         typer.echo(f"error: unknown role {name!r}, expected one of {', '.join(ROLES)}", err=True)
         raise typer.Exit(1)
@@ -197,15 +225,15 @@ def role_set(name: str, spec: str) -> None:
     typer.echo(f"{name} = {spec} saved to {save_config(config)}")
 
 
-@role_app.command("list")
+@role_app.command("list", help="Show which model each role uses.")
 def role_list() -> None:
     config = read_config()
     for name in ROLES:
         typer.echo(f"{name}: {config.roles.get(name, '(unset)')}")
 
 
-@role_app.command("unset")
-def role_unset(name: str) -> None:
+@role_app.command("unset", help="Remove a role mapping.")
+def role_unset(name: str = typer.Argument(..., help="planner, executor or compactor")) -> None:
     config = read_config()
     if name not in config.roles:
         typer.echo(f"error: role {name} is not set", err=True)
@@ -215,8 +243,10 @@ def role_unset(name: str) -> None:
     typer.echo(f"unset {name}")
 
 
-@app.command()
-def stats(session: str | None = typer.Option(None, "--session", "-s")) -> None:
+@app.command(help="Show recorded token usage and estimated cost per role and model.")
+def stats(
+    session: str | None = typer.Option(None, "--session", "-s", help="Limit to one session id"),
+) -> None:
     config = read_config()
     prices = {k: v.model_dump() for k, v in config.prices.items()}
     rows = ContextStore().call_totals(session)
@@ -243,16 +273,23 @@ def stats(session: str | None = typer.Option(None, "--session", "-s")) -> None:
     typer.echo(f"total estimated cost: {total:.4f} usd{note}")
 
 
-@bench_app.command("run")
+@bench_app.command(
+    "run",
+    help="Run every benchmark task in single and split mode and write docs/BENCHMARKS.md.",
+)
 def bench_run(
     baseline: str = typer.Option(..., "--baseline", help="provider:model for single mode"),
     planner: str | None = typer.Option(None, "--planner", help="defaults to the planner role"),
     executor: str | None = typer.Option(None, "--executor", help="defaults to the executor role"),
-    repeat: int = typer.Option(1, "--repeat", min=1),
-    tasks_dir: Annotated[Path, typer.Option("--tasks")] = Path("benchmarks/tasks"),
+    repeat: int = typer.Option(1, "--repeat", min=1, help="Runs per task and mode"),
+    tasks_dir: Annotated[Path, typer.Option("--tasks", help="Folder with task subfolders")] = Path(
+        "benchmarks/tasks"
+    ),
     only: Annotated[list[str] | None, typer.Option("--only", help="task name (repeatable)")] = None,
-    out: Annotated[Path, typer.Option("--out")] = Path("docs/BENCHMARKS.md"),
-    modes: str = typer.Option("single,split", "--modes"),
+    out: Annotated[Path, typer.Option("--out", help="Markdown report path")] = Path(
+        "docs/BENCHMARKS.md"
+    ),
+    modes: str = typer.Option("single,split", "--modes", help="Comma separated: single, split"),
 ) -> None:
     import sys
 
@@ -319,7 +356,11 @@ def write_report(out: Path, config) -> None:
     out.write_text(render_markdown(RESULTS_DIR, prices), encoding="utf-8")
 
 
-@bench_app.command("report")
-def bench_report(out: Annotated[Path, typer.Option("--out")] = Path("docs/BENCHMARKS.md")) -> None:
+@bench_app.command("report", help="Rebuild the markdown report from saved benchmark results.")
+def bench_report(
+    out: Annotated[Path, typer.Option("--out", help="Markdown report path")] = Path(
+        "docs/BENCHMARKS.md"
+    ),
+) -> None:
     write_report(out, read_config())
     typer.echo(f"wrote {out}")
