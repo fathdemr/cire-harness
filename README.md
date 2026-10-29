@@ -185,8 +185,8 @@ src/cire_harness/
 
 ## Contributing
 
-Issues and pull requests are welcome.
+Open an issue before writing code, keep pull requests small, run `uv run ruff check . && uv run pytest`, and expect a maintainer review before merge. Details in [CONTRIBUTING.md](CONTRIBUTING.md). Security problems go through [SECURITY.md](SECURITY.md), not public issues.
 
 ## License
 
-TODO: license name (see `LICENSE`)
+[MIT](LICENSE)

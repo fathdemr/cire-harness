@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you run and what did you see? Paste the exact error text if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      placeholder: uv run cire chat -p ollama:llama3.1
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      placeholder: bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0
+  - type: input
+    id: env
+    attributes:
+      label: OS, Python and terminal
+      placeholder: macOS 15, Python 3.12, Ghostty
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Secrets
+      options:
+        - label: I checked that no API key or token appears in this report
+          required: true
