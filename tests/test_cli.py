@@ -3,7 +3,7 @@ from typer.testing import CliRunner
 from cire_harness import __version__
 from cire_harness.cli import app
 from cire_harness.providers.fake import FakeProvider
-from cire_harness.providers.types import Message, Response, Usage
+from cire_harness.providers.types import Message, Response, ToolCall, Usage
 
 runner = CliRunner()
 
@@ -97,3 +97,45 @@ def test_run_records_calls_and_stats_prints_them(tmp_path, monkeypatch):
     out = runner.invoke(app, ["stats"]).output
     assert "total estimated cost: 2.0000 usd" in out
     assert runner.invoke(app, ["stats", "-s", "nope"]).output.strip() == "no recorded calls"
+
+
+def test_bench_run_writes_report(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    fixture = tmp_path / "tasks" / "demo" / "repo"
+    fixture.mkdir(parents=True)
+    (fixture / "note.txt").write_text("todo\n")
+    (tmp_path / "tasks" / "demo" / "task.toml").write_text(
+        'prompt = "flip it"\nacceptance = ["grep -qx done note.txt"]\n'
+    )
+    write = ToolCall(id="w", name="write_file", arguments={"path": "note.txt", "content": "done\n"})
+    monkeypatch.setattr(
+        "cire_harness.cli.get_provider",
+        lambda spec: FakeProvider(
+            [
+                Response(message=Message(role="assistant", tool_calls=[write])),
+                Response(message=Message(role="assistant", content="ok")),
+            ]
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "bench",
+            "run",
+            "--baseline",
+            "fake:x",
+            "--modes",
+            "single",
+            "--tasks",
+            "tasks",
+            "--out",
+            "out/B.md",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "demo [single] run 1/1 ... ok" in result.output
+    assert "| demo | single | 1/1 |" in (tmp_path / "out" / "B.md").read_text()
+    assert list((tmp_path / "benchmarks" / "results").glob("*.json"))
+    result = runner.invoke(app, ["bench", "run", "--baseline", "fake:x", "--tasks", "tasks"])
+    assert result.exit_code == 1 and "split mode needs" in result.output

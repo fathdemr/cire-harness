@@ -26,6 +26,8 @@ mcp_app = typer.Typer(no_args_is_help=True, help="Manage MCP servers in ~/.cire/
 app.add_typer(mcp_app, name="mcp")
 role_app = typer.Typer(no_args_is_help=True, help="Map planner/executor roles to provider:model")
 app.add_typer(role_app, name="role")
+bench_app = typer.Typer(no_args_is_help=True, help="Run the benchmark task set")
+app.add_typer(bench_app, name="bench")
 DEFAULT_PROVIDER = "ollama:llama3.1"
 
 
@@ -238,3 +240,73 @@ def stats(session: str | None = typer.Option(None, "--session", "-s")) -> None:
         )
     note = " (+ unknown prices, add [prices] to config)" if unknown else ""
     typer.echo(f"total estimated cost: {total:.4f} usd{note}")
+
+
+@bench_app.command("run")
+def bench_run(
+    baseline: str = typer.Option(..., "--baseline", help="provider:model for single mode"),
+    planner: str | None = typer.Option(None, "--planner", help="defaults to the planner role"),
+    executor: str | None = typer.Option(None, "--executor", help="defaults to the executor role"),
+    repeat: int = typer.Option(1, "--repeat", min=1),
+    tasks_dir: Annotated[Path, typer.Option("--tasks")] = Path("benchmarks/tasks"),
+    only: Annotated[list[str] | None, typer.Option("--only", help="task name (repeatable)")] = None,
+    out: Annotated[Path, typer.Option("--out")] = Path("docs/BENCHMARKS.md"),
+    modes: str = typer.Option("single,split", "--modes"),
+) -> None:
+    import sys
+
+    from cire_harness.bench.report import render_markdown, save_results
+    from cire_harness.bench.runner import run_task
+    from cire_harness.bench.tasks import load_tasks
+
+    config = read_config()
+    planner = planner or config.roles.get("planner")
+    executor = executor or config.roles.get("executor")
+    wanted = [m.strip() for m in modes.split(",") if m.strip()]
+    if "split" in wanted and not (planner and executor):
+        typer.echo(
+            "error: split mode needs --planner and --executor (or roles in config)", err=True
+        )
+        raise typer.Exit(1)
+    try:
+        tasks = load_tasks(tasks_dir, only)
+        for spec in filter(None, [baseline, planner, executor]):
+            get_provider(spec)
+    except (ValueError, ProviderError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from None
+
+    models = {"baseline (single)": baseline}
+    if "split" in wanted:
+        models.update({"planner (split)": planner, "executor (split)": executor})
+
+    async def run_all():
+        results = []
+        for task in tasks:
+            for mode in wanted:
+                for i in range(repeat):
+                    typer.echo(f"{task.name} [{mode}] run {i + 1}/{repeat} ... ", nl=False)
+                    if mode == "single":
+                        result = await run_task(task, "single", lambda: get_provider(baseline))
+                    else:
+                        result = await run_task(
+                            task,
+                            "split",
+                            lambda: get_provider(planner),
+                            lambda: get_provider(executor),
+                        )
+                    cost = result.cost({k: v.model_dump() for k, v in config.prices.items()})
+                    typer.echo(
+                        f"{'ok' if result.ok else 'FAIL'} {result.seconds:.0f}s "
+                        f"cost={'?' if cost is None else f'{cost:.4f}'}"
+                    )
+                    results.append(result)
+        return results
+
+    results = asyncio.run(run_all())
+    prices = {k: v.model_dump() for k, v in config.prices.items()}
+    command = "uv run cire " + " ".join(sys.argv[1:])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_markdown(results, models, command, prices), encoding="utf-8")
+    raw = save_results(results, Path("benchmarks/results"), models)
+    typer.echo(f"wrote {out} and {raw}")
