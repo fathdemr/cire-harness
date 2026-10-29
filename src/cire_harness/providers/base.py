@@ -10,6 +10,10 @@ class ProviderError(Exception):
         self.status = status
         self.body = body
 
+    def __str__(self) -> str:
+        message = super().__str__()
+        return f"{message}: {self.body[:500]}" if self.body else message
+
 
 class Provider(Protocol):
     name: str
