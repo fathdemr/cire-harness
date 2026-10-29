@@ -23,6 +23,8 @@ class MCPManager:
         for name, server in servers.items():
             try:
                 tools += await self.connect_one(name, server)
+            except FileNotFoundError:
+                self.errors[name] = f"command not found: {server.command}"
             except Exception as exc:
                 self.errors[name] = f"{type(exc).__name__}: {exc}"
         return tools

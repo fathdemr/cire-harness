@@ -17,7 +17,7 @@ async def test_connect_adapts_tools_and_reports_failures():
         assert by_name["echo.echo"].spec.parameters["required"] == ["text"]
         assert await by_name["echo.echo"].run({"text": "ab", "times": 2}) == "abab"
         assert (await by_name["echo.fail"].run({})).startswith("error:")
-        assert list(manager.errors) == ["bad"]
+        assert manager.errors == {"bad": "command not found: no-such-cmd-xyz"}
     finally:
         await manager.close()
     assert manager.closed
