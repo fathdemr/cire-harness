@@ -8,7 +8,7 @@ class TaskSpec(BaseModel):
     files: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     acceptance: list[str] = Field(default_factory=list)
-    max_turns: int = Field(default=15, ge=1, le=50)
+    max_turns: int = Field(default=15, ge=5, le=50)
 
     def render(self) -> str:
         lines = [f"Goal: {self.goal}"]

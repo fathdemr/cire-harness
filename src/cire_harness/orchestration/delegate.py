@@ -30,7 +30,8 @@ def delegate_tool(
             description="Hand a well-defined coding task to a cheaper executor model that works "
             "in a fresh context with file tools only. Give a precise goal, the files it may "
             "change, constraints, and acceptance shell commands that must exit 0. Returns a "
-            "short report with the verification output. Use it for mechanical multi-file work; "
+            "short report with the verification output. max_turns is at least 5, default 15. "
+            "Use it for mechanical multi-file work; "
             "do small edits yourself.",
             parameters=schema(
                 goal={"type": "string"},
