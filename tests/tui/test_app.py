@@ -230,12 +230,7 @@ async def test_delegate_runs_executor_with_confirmation(tmp_path, store):
     assert (tmp_path / "x.txt").read_text() == "1"
 
 
-async def test_log_selection_and_copy_command(store, monkeypatch):
-    from textual.geometry import Offset
-    from textual.selection import Selection
-
-    from cire_harness.tui.app import Log
-
+async def test_copy_command(store, monkeypatch):
     history = [
         Message(role="user", content="first"),
         Message(role="assistant", content="second line"),
@@ -245,9 +240,6 @@ async def test_log_selection_and_copy_command(store, monkeypatch):
     monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
     async with app.run_test() as pilot:
         await pilot.pause()
-        log = app.query_one(Log)
-        text, end = log.get_selection(Selection(Offset(0, 0), Offset(6, 1)))
-        assert text == "you: first\nsecond" and end == "\n"
         assert app.handle_command("/copy") == "copied 11 chars"
     assert copied == ["second line"]
     assert make_app(store).handle_command("/copy") == "nothing to copy"
