@@ -24,7 +24,8 @@ def reply(text="", calls=()):
 
 
 def log_lines(app):
-    return [str(line.text) for line in app.query_one(RichLog).lines]
+    lines = [str(line.text).rstrip() for line in app.query_one(RichLog).lines]
+    return [line for line in lines if line]
 
 
 async def test_message_round_trip_and_save(store):
@@ -250,3 +251,21 @@ async def test_log_selection_and_copy_command(store, monkeypatch):
         assert app.handle_command("/copy") == "copied 11 chars"
     assert copied == ["second line"]
     assert make_app(store).handle_command("/copy") == "nothing to copy"
+
+
+async def test_slash_hint_and_help(store):
+    app = make_app(store)
+    async with app.run_test() as pilot:
+        hint = app.query_one("#hint", Static)
+        assert not hint.display
+        await pilot.press("/", "m")
+        await pilot.pause()
+        assert hint.display and "/model" in str(hint.content) and "/stats" not in str(hint.content)
+        await pilot.press(" ")
+        await pilot.pause()
+        assert not hint.display
+        await pilot.press("backspace", "backspace", "backspace", "enter")
+        await pilot.pause()
+        assert log_lines(app) == []
+    assert app.handle_command("/help").startswith("/model")
+    assert app.handle_command("/nope").endswith("type /help")
