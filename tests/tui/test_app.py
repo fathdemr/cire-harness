@@ -253,19 +253,32 @@ async def test_log_selection_and_copy_command(store, monkeypatch):
     assert make_app(store).handle_command("/copy") == "nothing to copy"
 
 
-async def test_slash_hint_and_help(store):
+async def test_slash_hint_navigation_and_help(store):
+    from textual.widgets import Input, OptionList
+
     app = make_app(store)
     async with app.run_test() as pilot:
-        hint = app.query_one("#hint", Static)
+        hint = app.query_one("#hint", OptionList)
+        field = app.query_one(Input)
         assert not hint.display
-        await pilot.press("/", "m")
+        await pilot.press("/", "s")
         await pilot.pause()
-        assert hint.display and "/model" in str(hint.content) and "/stats" not in str(hint.content)
-        await pilot.press(" ")
+        assert hint.display and hint.option_count == 2
+        assert app.highlighted_command() == "/stats"
+        await pilot.press("down")
+        assert app.highlighted_command() == "/sessions"
+        await pilot.press("down")
+        assert app.highlighted_command() == "/stats"
+        await pilot.press("enter")
         await pilot.pause()
-        assert not hint.display
-        await pilot.press("backspace", "backspace", "backspace", "enter")
+        assert field.value == "/stats " and not hint.display and log_lines(app) == []
+        await pilot.press("enter")
         await pilot.pause()
-        assert log_lines(app) == []
+        assert log_lines(app)[-1].startswith("input=0")
+        await pilot.press("/", "c", "o", "tab")
+        await pilot.pause()
+        assert field.value == "/compact "
+        await pilot.press("ctrl+u", " ", "enter")
+        await pilot.pause()
     assert app.handle_command("/help").startswith("/model")
     assert app.handle_command("/nope").endswith("type /help")

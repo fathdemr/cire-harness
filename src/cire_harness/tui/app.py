@@ -6,9 +6,9 @@ from textual.app import App
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import ModalScreen
-from textual.selection import Selection
 from textual.suggester import SuggestFromList
-from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static
+from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static
+from textual.widgets.option_list import Option
 
 from cire_harness.config import MCPServer
 from cire_harness.context.compactor import KEEP_MESSAGES, compact, estimate_tokens, split_point
@@ -29,16 +29,6 @@ COMMANDS = {
     "/copy": "copy the last answer to the clipboard",
     "/help": "show this list",
 }
-
-
-class Log(RichLog):
-    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
-        text = "\n".join(strip.text for strip in self.lines)
-        return selection.extract(text), "\n"
-
-    def selection_updated(self, selection: Selection | None) -> None:
-        self._line_cache.clear()
-        self.refresh()
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -78,9 +68,9 @@ class ChatApp(App):
     TITLE = "cire"
     CSS = """
     Screen { layout: vertical; }
-    Log { height: 1fr; padding: 0 1; }
-    #hint { height: auto; max-height: 9; padding: 0 2; color: $text-muted; background: $surface;
-        display: none; }
+    RichLog { height: 1fr; padding: 0 1; }
+    #hint { height: auto; max-height: 9; padding: 0 1; background: $surface; display: none;
+        border: none; }
     #status { height: auto; max-height: 6; padding: 0 2; color: $text-muted; }
     Input { border: round $primary; }
     Input:focus { border: round $accent; }
@@ -88,6 +78,11 @@ class ChatApp(App):
     BINDINGS = [
         Binding("escape", "stop", "Stop"),
         Binding("ctrl+q", "quit", "Quit", priority=True),
+        Binding("up", "hint_move(-1)", "Previous command", show=False),
+        Binding("down", "hint_move(1)", "Next command", show=False),
+        Binding("tab", "hint_accept", "Complete command", show=False, priority=True),
+        Binding("pageup", "scroll_log(-1)", "Scroll up", show=False),
+        Binding("pagedown", "scroll_log(1)", "Scroll down", show=False),
     ]
 
     def __init__(
@@ -122,8 +117,8 @@ class ChatApp(App):
 
     def compose(self):
         yield Header()
-        yield Log(wrap=True, markup=False)
-        yield Static(id="hint")
+        yield RichLog(wrap=True, markup=False)
+        yield OptionList(id="hint")
         yield Static(id="status")
         yield Input(
             placeholder="Type a message, / for commands",
@@ -141,6 +136,8 @@ class ChatApp(App):
                 log.write(Markdown(message.content))
         self.query_one(Input).focus()
         self.status = self.query_one("#status", Static)
+        self.hint = self.query_one("#hint", OptionList)
+        self.hint.can_focus = False
         if self.delegate is not None:
             tool = self.delegate(self.approve, lambda e: self.show_event(e, "exec"))
             self.registry.tools[tool.name] = tool
@@ -199,22 +196,51 @@ class ChatApp(App):
                 self.usage += event.response.usage
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        hint = self.query_one("#hint", Static)
         text = event.value
-        if not text.startswith("/") or " " in text:
-            hint.display = False
+        matches = (
+            [c for c in COMMANDS if c.startswith(text.lower())]
+            if text.startswith("/") and " " not in text
+            else []
+        )
+        self.hint.clear_options()
+        self.hint.display = bool(matches)
+        if matches:
+            self.hint.add_options(Option(f"{c:<11}{COMMANDS[c]}", id=c) for c in matches)
+            self.hint.highlighted = 0
+
+    def highlighted_command(self) -> str | None:
+        if not self.hint.display or self.hint.highlighted is None:
+            return None
+        return self.hint.get_option_at_index(self.hint.highlighted).id
+
+    def action_hint_move(self, step: int) -> None:
+        if not self.hint.display:
             return
-        matches = [c for c in COMMANDS if c.startswith(text.lower())]
-        if not matches:
-            hint.display = False
+        count = self.hint.option_count
+        self.hint.highlighted = ((self.hint.highlighted or 0) + step) % count
+
+    def action_hint_accept(self) -> None:
+        command = self.highlighted_command()
+        if command is None:
+            self.screen.focus_next()
             return
-        hint.update("\n".join(f"{c:<11}{COMMANDS[c]}" for c in matches))
-        hint.display = True
+        field = self.query_one(Input)
+        field.value = command + " "
+        field.cursor_position = len(field.value)
+        self.hint.display = False
+
+    def action_scroll_log(self, direction: int) -> None:
+        log = self.query_one(RichLog)
+        log.scroll_page_down() if direction > 0 else log.scroll_page_up()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
+        command = self.highlighted_command()
+        if command is not None and text != command:
+            self.action_hint_accept()
+            return
         event.input.value = ""
-        self.query_one("#hint", Static).display = False
+        self.hint.display = False
         if not text:
             return
         if text.startswith("/"):
