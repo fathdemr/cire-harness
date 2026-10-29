@@ -1,0 +1,7 @@
+prompt = "Rename the function calc_area to area everywhere in this repo, including every call site. Behaviour must stay the same."
+acceptance = [
+  "python3 -c \"import shapes; assert shapes.area(2, 3) == 6\"",
+  "python3 main.py | grep -q 'total area: 20'",
+  "python3 report.py | grep -q 'largest: 12'",
+  "if grep -rq calc_area --include='*.py' .; then echo 'calc_area still present'; exit 1; fi",
+]

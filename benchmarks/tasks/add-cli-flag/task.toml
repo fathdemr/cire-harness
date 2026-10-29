@@ -1,0 +1,8 @@
+prompt = "Add a --reverse flag to tool.py that reverses the text. It must combine with --upper (upper is applied first, then reverse). Keep existing behaviour unchanged."
+acceptance = [
+  "python3 tool.py hello | grep -qx hello",
+  "python3 tool.py --upper hello | grep -qx HELLO",
+  "python3 tool.py --reverse hello | grep -qx olleh",
+  "python3 tool.py --upper --reverse hello | grep -qx OLLEH",
+  "python3 tool.py --help | grep -q reverse",
+]

@@ -1,0 +1,8 @@
+prompt = "Write tests/test_stack.py as a plain python script (asserts, no pytest) that exercises stack.py: push, pop order, peek, is_empty, size, and that pop and peek on an empty stack raise IndexError. The script must print ok at the end. Do not modify stack.py."
+acceptance = [
+  "python3 tests/test_stack.py | grep -qx ok",
+  "grep -q IndexError tests/test_stack.py",
+  "grep -q peek tests/test_stack.py",
+  "grep -q is_empty tests/test_stack.py",
+  "python3 -c \"import hashlib,sys; sys.exit(0 if hashlib.sha256(open('stack.py','rb').read()).hexdigest()=='65d0405270b75a6c6611379a8e9c5c3463b0a55789f9fcd4d10bc1744ebda08e' else 1)\"",
+]

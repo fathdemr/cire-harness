@@ -1,0 +1,2 @@
+prompt = "Implement slugify.py according to SPEC.md so that python3 test_slugify.py passes."
+acceptance = ["python3 test_slugify.py"]

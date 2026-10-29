@@ -1,0 +1,2 @@
+prompt = "The checks in this repo fail. Find and fix the bug in calc.py. Do not change test_calc.py."
+acceptance = ["python3 test_calc.py"]
