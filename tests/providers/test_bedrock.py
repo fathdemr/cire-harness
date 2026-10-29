@@ -5,10 +5,10 @@ import pytest
 
 from cire_harness.providers import get_provider
 from cire_harness.providers.base import ProviderError, complete
-from cire_harness.providers.bedrock import BedrockProvider
-from cire_harness.providers.types import Message, ToolSpec
+from cire_harness.providers.bedrock import BedrockProvider, to_converse_messages
+from cire_harness.providers.types import Message, ToolCall, ToolSpec
 
-MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+MODEL = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 
 def make_provider(body: dict | str, status: int = 200, captured: list | None = None):
@@ -24,38 +24,65 @@ def make_provider(body: dict | str, status: int = 200, captured: list | None = N
 
 def answer(*content, stop="end_turn"):
     return {
-        "content": list(content),
-        "stop_reason": stop,
-        "usage": {"input_tokens": 11, "output_tokens": 4, "cache_read_input_tokens": 2},
+        "output": {"message": {"role": "assistant", "content": list(content)}},
+        "stopReason": stop,
+        "usage": {"inputTokens": 11, "outputTokens": 4, "cacheReadInputTokens": 2},
     }
 
 
-async def test_request_targets_bedrock_with_bearer_token():
+async def test_request_uses_converse_with_bearer_token():
     captured: list = []
-    provider = make_provider(answer({"type": "text", "text": "hi"}), captured=captured)
+    provider = make_provider(answer({"text": "hi"}), captured=captured)
     await complete(
         provider,
         [Message(role="system", content="be brief"), Message(role="user", content="hey")],
-        [ToolSpec(name="read", description="r")],
+        [ToolSpec(name="read", description="r"), ToolSpec(name="bare", description="")],
     )
     url, headers, body = captured[0]
     assert url == (
         "https://bedrock-runtime.eu-central-1.amazonaws.com/model/"
-        "anthropic.claude-sonnet-4-5-20250929-v1%3A0/invoke"
+        "eu.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse"
     )
     assert headers["authorization"] == "Bearer secret-key"
     assert "x-api-key" not in headers
-    assert body["anthropic_version"] == "bedrock-2023-05-31"
-    assert body["system"] == "be brief"
-    assert body["tools"][0]["name"] == "read"
-    assert "model" not in body and "stream" not in body
+    assert body["system"] == [{"text": "be brief"}]
+    assert body["inferenceConfig"] == {"maxTokens": 16000}
+    assert body["messages"] == [{"role": "user", "content": [{"text": "hey"}]}]
+    tools = body["toolConfig"]["tools"]
+    assert tools[0]["toolSpec"]["inputSchema"]["json"]["type"] == "object"
+    assert "description" not in tools[1]["toolSpec"]
+    assert "anthropic_version" not in body and "model" not in body
 
 
-async def test_text_and_tool_use_are_parsed():
+def test_message_conversion_merges_roles_and_tool_results():
+    call = ToolCall(id="t1", name="read", arguments={"path": "a"})
+    system, wire = to_converse_messages(
+        [
+            Message(role="system", content="s"),
+            Message(role="user", content="one"),
+            Message(role="user", content="two"),
+            Message(role="assistant", content="", tool_calls=[call]),
+            Message(role="tool", content="data", tool_call_id="t1"),
+            Message(role="tool", content="error: nope", tool_call_id="t2"),
+        ]
+    )
+    assert system == [{"text": "s"}]
+    assert wire[0] == {"role": "user", "content": [{"text": "one"}, {"text": "two"}]}
+    assert wire[1] == {
+        "role": "assistant",
+        "content": [{"toolUse": {"toolUseId": "t1", "name": "read", "input": {"path": "a"}}}],
+    }
+    results = [b["toolResult"] for b in wire[2]["content"]]
+    assert results[0] == {"toolUseId": "t1", "content": [{"text": "data"}], "status": "success"}
+    assert results[1]["status"] == "error"
+
+
+async def test_text_tool_use_and_unknown_blocks_are_parsed():
     provider = make_provider(
         answer(
-            {"type": "text", "text": "Let me look. "},
-            {"type": "tool_use", "id": "t1", "name": "read", "input": {"path": "a"}},
+            {"reasoningContent": {"reasoningText": {"text": "hmm"}}},
+            {"text": "Let me look. "},
+            {"toolUse": {"toolUseId": "t1", "name": "read", "input": {"path": "a"}}},
             stop="tool_use",
         )
     )
@@ -91,7 +118,7 @@ def test_factory_reads_env_only(monkeypatch):
         get_provider(f"bedrock:{MODEL}")
     monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "k")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    provider = get_provider(f"bedrock:{MODEL}")
+    provider = get_provider("bedrock:openai.gpt-oss-120b-1:0")
     assert isinstance(provider, BedrockProvider)
-    assert provider.model == MODEL
+    assert provider.model == "openai.gpt-oss-120b-1:0"
     assert provider.base_url == "https://bedrock-runtime.us-east-1.amazonaws.com"

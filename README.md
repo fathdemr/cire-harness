@@ -54,7 +54,7 @@ export AWS_REGION=eu-central-1
 | --- | --- | --- |
 | `anthropic:claude-sonnet-4-5` | `ANTHROPIC_API_KEY` | Anthropic API, streaming |
 | `openai:gpt-5` | `OPENAI_API_KEY` | OpenAI and any OpenAI-compatible endpoint |
-| `bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0` | `AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION` | Claude on AWS Bedrock with a [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html); non-streaming. Use the inference profile id (`eu.`, `us.` or `apac.` prefix), bare model ids are rejected with HTTP 400 |
+| `bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0`, `bedrock:openai.gpt-oss-120b-1:0` | `AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION` | Any Bedrock model that supports the Converse API, with a [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html); non-streaming. Newer Claude models need the inference profile id (`eu.`, `us.` or `apac.` prefix), bare ids are rejected with HTTP 400 |
 | `ollama:llama3.1` | none | local, uses the prompt-based tool fallback |
 
 Each key is sent only to its own provider, over HTTPS, and never appears in logs or error messages. If a key is missing cire stops with a message naming the variable instead of sending an empty credential.
