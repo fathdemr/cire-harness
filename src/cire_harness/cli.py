@@ -12,7 +12,7 @@ from cire_harness.context.recall import recall_tools
 from cire_harness.context.store import ContextStore
 from cire_harness.loop.loop import run_agent
 from cire_harness.orchestration.delegate import delegate_tool
-from cire_harness.providers import ProviderError, get_provider
+from cire_harness.providers import KINDS, ProviderError, get_provider
 from cire_harness.providers.types import Message, ToolCall
 from cire_harness.tools import ToolRegistry
 from cire_harness.tools.bash import bash_tools
@@ -174,11 +174,12 @@ def role_set(name: str, spec: str) -> None:
     if name not in ROLES:
         typer.echo(f"error: unknown role {name!r}, expected one of {', '.join(ROLES)}", err=True)
         raise typer.Exit(1)
-    try:
-        get_provider(spec)
-    except ProviderError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1) from None
+    kind, _, model = spec.partition(":")
+    if kind not in KINDS or not model:
+        typer.echo(
+            f"error: spec must look like kind:model with kind in {', '.join(KINDS)}", err=True
+        )
+        raise typer.Exit(1)
     config = read_config()
     config.roles[name] = spec
     typer.echo(f"{name} = {spec} saved to {save_config(config)}")

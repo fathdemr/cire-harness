@@ -44,16 +44,34 @@ uv run cire --version
 cire reads provider keys from environment variables at runtime. There is no key field anywhere in its config, and nothing you type is written to disk except your chat history.
 
 ```bash
-export ANTHROPIC_API_KEY=your_key
-export OPENAI_API_KEY=your_key
+export ANTHROPIC_API_KEY=your_key            # anthropic:<model>
+export OPENAI_API_KEY=your_key               # openai:<model>
+export AWS_BEARER_TOKEN_BEDROCK=your_key     # bedrock:<model-id>, plus AWS_REGION
+export AWS_REGION=eu-central-1
 ```
 
-| Variable | Used for |
-| --- | --- |
-| `ANTHROPIC_API_KEY` | `anthropic:<model>` providers |
-| `OPENAI_API_KEY` | `openai:<model>` providers |
+| Provider spec | Key variable | Notes |
+| --- | --- | --- |
+| `anthropic:claude-sonnet-4-5` | `ANTHROPIC_API_KEY` | Anthropic API, streaming |
+| `openai:gpt-5` | `OPENAI_API_KEY` | OpenAI and any OpenAI-compatible endpoint |
+| `bedrock:anthropic.claude-sonnet-4-5-20250929-v1:0` | `AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION` | Claude on AWS Bedrock with a [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html); non-streaming |
+| `ollama:llama3.1` | none | local, uses the prompt-based tool fallback |
 
-Ollama needs no key. Each key is sent only to its own provider.
+Each key is sent only to its own provider, over HTTPS, and never appears in logs or error messages. If a key is missing cire stops with a message naming the variable instead of sending an empty credential.
+
+### Roles: planner and executor
+
+cire can route work between two models. The model you chat with is the **planner**. When an **executor** role is set, the planner gets a `delegate` tool: it writes a short spec (goal, files, constraints, acceptance commands) and a cheaper model carries it out in a fresh context with file tools only. The harness then runs the acceptance commands itself, retries once with the failure output, and hands the planner a short report instead of the executor's whole history.
+
+```bash
+uv run cire role set planner bedrock:anthropic.claude-sonnet-4-5-20250929-v1:0
+uv run cire role set executor ollama:llama3.1
+uv run cire role list
+uv run cire chat          # planner from config, delegate available
+uv run cire chat -p openai:gpt-5   # -p overrides the planner for this session
+```
+
+Executors cannot run shell commands. Their file writes still ask for confirmation, and verification is deterministic: a task passes only if every acceptance command exits 0 and no file outside the spec was touched. `/stats` shows planner and executor token usage separately.
 
 ### MCP servers
 
@@ -109,8 +127,9 @@ Large tool outputs are stored in SQLite and replaced in the prompt by a short pr
 src/cire_harness/
   cli.py        cire run / chat / mcp
   config.py     ~/.cire/config.toml
-  providers/    Anthropic, OpenAI-compatible, Ollama, prompt-based tool fallback
+  providers/    Anthropic, OpenAI-compatible, Ollama, Bedrock, prompt-based tool fallback
   loop/         agent loop and tool execution
+  orchestration/ task spec, executor loop, deterministic verification, delegate tool
   tools/        read, write, edit, bash, grep
   mcp/          MCP client and tool adapter
   context/      SQLite store, masking, recall, compaction
@@ -119,7 +138,8 @@ src/cire_harness/
 
 ## Security
 
-- **No stored credentials.** Provider keys and MCP secrets are read from environment variables when needed. The config file holds variable names, never values.
+- **No stored credentials.** Provider keys and MCP secrets are read from environment variables when needed. The config file holds variable names, never values. Missing keys fail fast with the variable name, and keys never appear in errors or logs.
+- **Pinned endpoints.** Provider hosts are fixed in code; the Bedrock region from your environment is validated against the AWS region format before a URL is built from it.
 - **Minimal environment for MCP servers.** A subprocess server sees only `PATH`, `HOME` and the variables you listed with `--env`.
 - **Confirmation for risky tools.** Shell commands, file writes and all MCP tools prompt before running unless you opt out per server.
 - **Sandboxed file tools.** Built-in file and grep tools refuse paths outside the working directory.

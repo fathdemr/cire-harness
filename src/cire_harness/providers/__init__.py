@@ -3,10 +3,12 @@ from typing import Literal
 
 from cire_harness.providers.anthropic import AnthropicProvider
 from cire_harness.providers.base import Provider, ProviderError
+from cire_harness.providers.bedrock import KEY_VAR, REGION_VARS, BedrockProvider
 from cire_harness.providers.fallback import PromptToolProvider
 from cire_harness.providers.openai_compat import OpenAICompatProvider
 
 ToolMode = Literal["native", "prompt", "auto"]
+KINDS = ("anthropic", "openai", "ollama", "bedrock")
 
 OLLAMA_URL = "http://localhost:11434/v1"
 
@@ -33,10 +35,15 @@ def get_provider(
             model, base_url=base_url or "https://api.openai.com/v1", api_key=key
         )
         use_prompt = tool_mode == "prompt"
+    elif kind == "bedrock":
+        key = api_key or os.environ.get(KEY_VAR, "")
+        region = next((os.environ[v] for v in REGION_VARS if os.environ.get(v)), "")
+        provider = BedrockProvider(model, api_key=key, region=region)
+        use_prompt = tool_mode == "prompt"
     elif kind == "ollama":
         provider = OpenAICompatProvider(model, base_url=base_url or OLLAMA_URL)
         provider.name = "ollama"
         use_prompt = tool_mode != "native"
     else:
-        raise ProviderError(f"unknown provider kind {kind!r}")
+        raise ProviderError(f"unknown provider kind {kind!r}, expected one of {', '.join(KINDS)}")
     return PromptToolProvider(provider) if use_prompt else provider
