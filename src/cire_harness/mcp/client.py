@@ -1,9 +1,10 @@
+import os
 import sys
 from contextlib import AsyncExitStack
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 from cire_harness.config import MCPServer
@@ -30,7 +31,11 @@ class MCPManager:
         stack = AsyncExitStack()
         try:
             if server.command:
-                params = StdioServerParameters(command=server.command, args=server.args)
+                missing = [k for k in server.env if k not in os.environ]
+                if missing:
+                    raise ValueError(f"missing environment variable(s): {', '.join(missing)}")
+                env = get_default_environment() | {k: os.environ[k] for k in server.env}
+                params = StdioServerParameters(command=server.command, args=server.args, env=env)
                 read, write = await stack.enter_async_context(stdio_client(params, sys.stderr))
             else:
                 read, write, *_ = await stack.enter_async_context(

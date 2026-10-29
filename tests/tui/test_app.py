@@ -184,5 +184,5 @@ async def test_mcp_tools_join_registry_and_close_on_exit(store):
         assert "<- hihi" in lines
         assert lines[-1] == "done"
         assert any(line.startswith("mcp bad:") for line in lines)
-        assert app.handle_command("/tools") == "echo.echo\necho.fail"
+        assert app.handle_command("/tools") == "echo.echo\necho.secret\necho.fail"
     assert app.mcp.closed
