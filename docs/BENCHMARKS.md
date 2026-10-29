@@ -4,6 +4,33 @@ Modes: **single** runs one model with all tools. **split** runs the planner with
 
 Cost is estimated from the price table in `cire_harness/telemetry.py` (USD per million tokens); Ollama counts as free. A `?` means a model without a known price. Token counts in split mode add planner and executor together.
 
+## 2026-10-29 16:20 at commit `49ffa41`
+
+| Role | Model |
+| --- | --- |
+| baseline (single) | `bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0` |
+| planner (split) | `bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0` |
+| executor (split) | `ollama:llama3.1` |
+
+| Task | Mode | Passed | Avg cost (USD) | Avg tokens in / out | Avg seconds |
+| --- | --- | --- | --- | --- | --- |
+| add-cli-flag | single | 2/2 | 0.0570 | 13252 / 1148 | 23 |
+| add-cli-flag | split | 2/2 | 0.1315 | 46428 / 2302 | 90 |
+| add-tests | single | 2/2 | 0.0592 | 12195 / 1508 | 23 |
+| add-tests | split | 2/2 | 0.2100 | 63584 / 4189 | 127 |
+| fix-failing-test | single | 2/2 | 0.0472 | 12052 / 734 | 17 |
+| fix-failing-test | split | 2/2 | 0.0709 | 49294 / 2720 | 130 |
+| rename-across-files | single | 2/2 | 0.0773 | 18018 / 1552 | 26 |
+| rename-across-files | split | 2/2 | 0.0743 | 27846 / 2124 | 71 |
+| write-module-from-spec | single | 2/2 | 0.0572 | 13577 / 1101 | 21 |
+| write-module-from-spec | split | 2/2 | 0.0704 | 21672 / 1522 | 49 |
+| **all** | single | 10/10 | 0.0596 | 13818 / 1208 | 22 |
+| **all** | split | 10/10 | 0.1114 | 41765 / 2571 | 93 |
+
+```
+uv run cire bench run --baseline bedrock:eu.anthropic.claude-sonnet-4-5-20250929-v1:0 --repeat 2
+```
+
 ## 2026-10-29 15:52 at commit `1b984ff`
 
 | Role | Model |
