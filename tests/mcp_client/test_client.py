@@ -12,11 +12,11 @@ async def test_connect_adapts_tools_and_reports_failures():
     tools = await manager.connect({"echo": ECHO, "bad": MCPServer(command="no-such-cmd-xyz")})
     try:
         by_name = {t.name: t for t in tools}
-        assert set(by_name) == {"echo.echo", "echo.secret", "echo.fail"}
-        assert by_name["echo.echo"].risky is True
-        assert by_name["echo.echo"].spec.parameters["required"] == ["text"]
-        assert await by_name["echo.echo"].run({"text": "ab", "times": 2}) == "abab"
-        assert (await by_name["echo.fail"].run({})).startswith("error:")
+        assert set(by_name) == {"echo_echo", "echo_secret", "echo_fail"}
+        assert by_name["echo_echo"].risky is True
+        assert by_name["echo_echo"].spec.parameters["required"] == ["text"]
+        assert await by_name["echo_echo"].run({"text": "ab", "times": 2}) == "abab"
+        assert (await by_name["echo_fail"].run({})).startswith("error:")
         assert manager.errors == {"bad": "command not found: no-such-cmd-xyz"}
     finally:
         await manager.close()
@@ -37,7 +37,7 @@ async def test_env_names_are_passed_through(monkeypatch):
     manager = MCPManager()
     tools = await manager.connect({"echo": ECHO.model_copy(update={"env": ["ECHO_SECRET"]})})
     try:
-        secret = next(t for t in tools if t.name == "echo.secret")
+        secret = next(t for t in tools if t.name == "echo_secret")
         assert await secret.run({}) == "s3cret"
     finally:
         await manager.close()
@@ -48,7 +48,7 @@ async def test_env_not_passed_unless_listed(monkeypatch):
     manager = MCPManager()
     tools = await manager.connect({"echo": ECHO})
     try:
-        secret = next(t for t in tools if t.name == "echo.secret")
+        secret = next(t for t in tools if t.name == "echo_secret")
         assert await secret.run({}) == "unset"
     finally:
         await manager.close()

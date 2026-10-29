@@ -97,7 +97,7 @@ uv run cire mcp remove remote
 
 `--env` takes variable **names** only. The config stores the name, the value is read from your shell when the server starts, and cire refuses to save anything that looks like `NAME=value`. Subprocess servers start with a minimal environment, so a variable reaches a server only if you list it.
 
-Tools from a server appear as `<server>.<tool>`, for example `fs.read_file`. Every MCP tool asks for confirmation before it runs unless the server was added with `--trusted`. Type `/tools` in the chat to see what is loaded.
+Tools from a server appear as `<server>_<tool>`, for example `fs_read_file`. Every MCP tool asks for confirmation before it runs unless the server was added with `--trusted`. Type `/tools` in the chat to see what is loaded.
 
 The resulting file looks like this:
 

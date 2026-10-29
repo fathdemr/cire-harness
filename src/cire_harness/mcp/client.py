@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from contextlib import AsyncExitStack
 from typing import Any
@@ -64,7 +65,7 @@ class MCPManager:
             return text
 
         spec = ToolSpec(
-            name=f"{server}.{tool.name}",
+            name=re.sub(r"[^A-Za-z0-9_-]", "_", f"{server}_{tool.name}"),
             description=tool.description or "",
             parameters=tool.input_schema,
         )
